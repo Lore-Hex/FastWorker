@@ -195,6 +195,17 @@ def _compat(
 
 
 DESCRIPTORS: list[ProviderDescriptor] = [
+    _compat(
+        "trustedrouter",
+        "TrustedRouter",
+        base_url="https://api.trustedrouter.com/v1",
+        recommended_model="trustedrouter/fast",
+        env_key="TRUSTEDROUTER_API_KEY",
+        endpoint_help=(
+            "FastWorker's default provider. Create a key at "
+            "https://trustedrouter.com/console/api-keys."
+        ),
+    ),
     ProviderDescriptor(
         name="openai",
         title="OpenAI",
@@ -307,17 +318,6 @@ DESCRIPTORS: list[ProviderDescriptor] = [
         base_url="https://api.mistral.ai/v1",
         recommended_model="mistral-large-latest",
         env_key="MISTRAL_API_KEY",
-    ),
-    _compat(
-        "trustedrouter",
-        "TrustedRouter",
-        base_url="https://api.trustedrouter.com/v1",
-        recommended_model="trustedrouter/auto",
-        env_key="TRUSTEDROUTER_API_KEY",
-        endpoint_help=(
-            "TrustedRouter's attested OpenAI-compatible API. Create a key at "
-            "https://trustedrouter.com/console/api-keys."
-        ),
     ),
     # Resellers: many labs' models behind one key, using THEIR model namespaces (the curated
     # ids + display labels live in providers/matrix.py). TODO: add Groq and OpenRouter here

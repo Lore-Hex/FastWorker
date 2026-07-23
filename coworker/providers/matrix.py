@@ -80,8 +80,11 @@ MATRIX: dict[str, ModelEntry] = {
     "xai:grok-4.3": ModelEntry("Grok 4.3 · xAI"),
     "mistral:mistral-large-latest": ModelEntry("Mistral Large · Mistral"),
     # -- multi-model gateways ---------------------------------------------------
-    # The first prefix selects OpenWorker's provider; the remaining slash-delimited id is sent
+    # The first prefix selects FastWorker's provider; the remaining slash-delimited id is sent
     # unchanged to TrustedRouter's OpenAI-compatible API.
+    "trustedrouter:trustedrouter/fast": ModelEntry(
+        "Fast · TrustedRouter (low-latency routing)"
+    ),
     "trustedrouter:trustedrouter/auto": ModelEntry(
         "Auto · TrustedRouter (automatic fallback)"
     ),

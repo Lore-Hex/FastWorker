@@ -1,4 +1,4 @@
-//! OpenWorker desktop shell.
+//! FastWorker desktop shell.
 //!
 //! Tauri is a thin native window over the existing React SPA. It:
 //!   1. picks a free localhost port and starts the Python `openworker-server` as a managed
@@ -481,8 +481,7 @@ fn show_main(app: &tauri::AppHandle) {
 // The GUI drives updates through these commands (same invoke bridge as everything
 // else — no global plugin JS): check, background pre-download, install. Update
 // artifacts are minisign-verified against the pubkey in tauri.conf.json before
-// anything is installed; the manifest lives at the endpoints configured there
-// (download.openworker.com → GitHub Releases).
+// anything is installed; the manifest lives in this fork's GitHub Releases.
 
 #[derive(serde::Serialize)]
 struct UpdateInfo {
@@ -683,7 +682,7 @@ pub fn run() {
             //    Overlay title bar (macOS): traffic lights float over the edge-to-edge UI.
             let mut builder =
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-                    .title("OpenWorker")
+                    .title("FastWorker")
                     .inner_size(1360.0, 900.0)
                     .min_inner_size(980.0, 640.0)
                     // Let the WEBVIEW receive OS file drags: Tauri's own drag-drop handler
@@ -715,7 +714,7 @@ pub fn run() {
             });
 
             // 3. System tray: Open / Settings / Quit.
-            let open_i = MenuItem::with_id(app, "open", "Open OpenWorker", true, None::<&str>)?;
+            let open_i = MenuItem::with_id(app, "open", "Open FastWorker", true, None::<&str>)?;
             let settings_i = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open_i, &settings_i, &quit_i])?;
@@ -724,9 +723,9 @@ pub fn run() {
             // it for light/dark automatically — not the full-color app icon.
             let tray_icon = tauri::image::Image::new(include_bytes!("../icons/tray.rgba"), 44, 44);
             TrayIconBuilder::new()
-                .tooltip("OpenWorker")
+                .tooltip("FastWorker")
                 .icon(tray_icon)
-                .icon_as_template(true)
+                .icon_as_template(false)
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "open" => show_main(app),
@@ -746,7 +745,7 @@ pub fn run() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("error while building the OpenWorker desktop app")
+        .expect("error while building the FastWorker desktop app")
         .run(|app, event| {
             // Also on Exit: belt-and-suspenders in case a quit path reaches teardown without
             // a preceding ExitRequested (observed with macOS Cmd+Q under the tray setup).

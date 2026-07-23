@@ -146,7 +146,7 @@ export function App() {
   const [branch, setBranch] = useState<string | null>(null);
   const [showGate, setShowGate] = useState(false);
   const [agent, setAgent] = useState("cowork");
-  const [model, setModel] = useState("gpt-5.6-sol");
+  const [model, setModel] = useState("trustedrouter:trustedrouter/fast");
   const [models, setModels] = useState<string[]>([]);
   const [modelLabels, setModelLabels] = useState<Record<string, string>>({});
   const [surfaces, setSurfaces] = useState<SurfaceVisibility>({ cowork: true, chat: false, code: false });
@@ -1118,7 +1118,7 @@ export function App() {
         {overlay && (
           <div className="titlebar-drag" data-tauri-drag-region>
             <span className="titlebar-brand brand-wordmark">
-              <Icon name="logo" size={13} className="mark" /> OpenWorker<span className="beta-tag">BETA</span>
+              <Icon name="logo" size={13} className="mark" /> FastWorker<span className="beta-tag">BETA</span>
             </span>
           </div>
         )}
@@ -1127,13 +1127,12 @@ export function App() {
             <span /><span /><span />
           </div>
         )}
-        {/* The real OpenWorker mark (6-point star, same as the app/tray icon) — the old
-            ✦ text glyph was a 4-point sparkle that read as another product's logo. */}
+        {/* The same TrustedRouter mark used by the native app and provider setup. */}
         <div className="boot-mark">
           <Icon name="logo" size={38} />
         </div>
         <div className="boot-text">
-          {resumedExisting ? "Restoring your session…" : "Starting OpenWorker…"}
+          {resumedExisting ? "Restoring your session…" : "Starting FastWorker…"}
           <span className="beta-tag">BETA</span>
         </div>
       </div>

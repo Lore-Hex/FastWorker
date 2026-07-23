@@ -17,6 +17,10 @@ import { PROVIDER_LOGOS, providerRank } from "./logos";
 
 // Where a non-developer gets an API key — deep link + one line of instructions.
 export const KEY_HELP: Record<string, { url: string; label: string }> = {
+  trustedrouter: {
+    url: "https://trustedrouter.com/console/api-keys",
+    label: "trustedrouter.com",
+  },
   anthropic: { url: "https://console.anthropic.com/settings/keys", label: "console.anthropic.com" },
   openai: { url: "https://platform.openai.com/api-keys", label: "platform.openai.com" },
   gemini: { url: "https://aistudio.google.com/apikey", label: "aistudio.google.com" },

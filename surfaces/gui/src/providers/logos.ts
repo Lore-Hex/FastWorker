@@ -38,6 +38,7 @@ export const PROVIDER_LOGOS: Record<string, string> = {
 };
 
 export const PROVIDER_ORDER = [
+  "trustedrouter",
   "anthropic",
   "openai",
   "gemini",
@@ -51,7 +52,6 @@ export const PROVIDER_ORDER = [
   "qwen",
   "minimax",
   "xai",
-  "trustedrouter",
 ];
 
 export function providerRank(name: string): number {

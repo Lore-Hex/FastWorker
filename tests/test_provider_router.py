@@ -335,7 +335,8 @@ def test_manager_curated_models(tmp_path, monkeypatch):
     assert "anthropic:claude-opus-4-8" in models
     assert "gpt-4o" not in models  # no OpenAI seed anywhere
 
-    added = mgr.add_model("ollama:qwen2.5-coder:32b")  # keyless provider → selectable
+    monkeypatch.setattr(mgr, "_ollama_alive", lambda: True)
+    added = mgr.add_model("ollama:qwen2.5-coder:32b")  # live keyless provider → selectable
     assert added["ok"] and "ollama:qwen2.5-coder:32b" in added["models"]
 
     n = len(mgr.get_settings()["models"])
@@ -454,14 +455,17 @@ def test_anthropic_gemini_provider_config(tmp_path, monkeypatch):
 
 def test_first_configured_provider_wins_default(tmp_path, monkeypatch):
     monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path / "state"))
-    for var in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY"):
+    for var in (
+        "TRUSTEDROUTER_API_KEY",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "GEMINI_API_KEY",
+    ):
         monkeypatch.delenv(var, raising=False)
     from coworker.server.manager import SessionManager
 
     mgr = SessionManager(data_dir=tmp_path)
-    assert (
-        mgr.model == "gpt-5.6-sol"
-    )  # fresh install: built-in default, openai unconfigured
+    assert mgr.model == "trustedrouter:trustedrouter/fast"
 
     # the first provider that gets a key takes over the default
     mgr.set_provider("anthropic", {"api_key": "sk-ant-x"})
@@ -505,6 +509,7 @@ def test_provider_suggested_models(tmp_path, monkeypatch):
     mgr = SessionManager(data_dir=tmp_path)
     provs = {p["name"]: p for p in mgr.get_providers()}
     assert "gpt-5.5" in provs["openai"]["suggested_models"]
+    assert "trustedrouter/fast" in provs["trustedrouter"]["suggested_models"]
     assert "trustedrouter/auto" in provs["trustedrouter"]["suggested_models"]
     # ollama suggestions are bare names (no `ollama:` prefix); empty when unconfigured
     sugg = provs["ollama"]["suggested_models"]

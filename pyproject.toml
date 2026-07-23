@@ -45,6 +45,10 @@ messaging = ["python-telegram-bot>=21", "slack-bolt>=1.18", "aiohttp>=3.9"]
 browser = ["playwright>=1.44"]
 
 [project.scripts]
+fastworker = "coworker.cli:main"
+fastworker-server = "coworker.server.run:main"
+fastworker-connectors = "coworker.connectors.cli:main"
+# Compatibility aliases retained for existing scripts and the packaged sidecar.
 openworker = "coworker.cli:main"
 openworker-server = "coworker.server.run:main"
 openworker-connectors = "coworker.connectors.cli:main"

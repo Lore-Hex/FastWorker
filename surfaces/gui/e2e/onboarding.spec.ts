@@ -27,11 +27,12 @@ test("provider gallery: cards wear their state; Next arms off stored credentials
   await expect(page.getByTestId("ob-provider-trustedrouter")).toContainText("Not set up");
   await expect(page.getByTestId("ob-provider-zai")).toContainText("Not set up");
   await expect(page.getByTestId("ob-provider-ollama")).toContainText("No key needed");
-  // Recognition-first order: anthropic before openai before the OpenAI-compat tail.
+  // FastWorker's default provider leads the gallery; recognizable direct providers follow.
   const names = await page
     .getByTestId("ob-provider-gallery")
     .locator("[data-testid^=ob-provider-]")
     .evaluateAll((els) => els.map((e) => e.getAttribute("data-testid")));
+  expect(names[0]).toBe("ob-provider-trustedrouter");
   expect(names.indexOf("ob-provider-anthropic")).toBeLessThan(names.indexOf("ob-provider-openai"));
   expect(names.indexOf("ob-provider-openai")).toBeLessThan(names.indexOf("ob-provider-zai"));
 
@@ -48,7 +49,7 @@ test("key form: Test verifies, saves, and returns to the gallery with the ✓", 
 
   await page.getByTestId("ob-provider-zai").click();
   // The header stays put (§39 fixed frame): the welcome headline is still on screen.
-  await expect(page.getByRole("heading", { name: "Welcome to OpenWorker" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Welcome to FastWorker" })).toBeVisible();
   // Optional endpoint is a quiet disclosure with no explainer copy (owner call 2026-07-18).
   await expect(page.getByTestId("ob-field-base_url")).toHaveCount(0);
   await page.getByTestId("ob-endpoint-link").click();

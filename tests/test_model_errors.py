@@ -1,6 +1,7 @@
-"""New-flagship rollout (2026-07-14): GPT-5.6 Sol/Terra/Luna + Claude Fable 5 in the
-matrix, both families' flagships as defaults, and friendly errors when an account can't
-use them (GPT-5.6 rolls out per-organization; quota/credits can run out on any model).
+"""Default-route and provider-flagship coverage.
+
+FastWorker defaults to TrustedRouter Fast while direct providers retain their own
+recommended flagships and friendly access errors.
 """
 
 from coworker.config import Config
@@ -23,8 +24,12 @@ def test_new_flagships_in_matrix_with_labels():
     assert "claude-fable-5" in models_for_provider("anthropic")
 
 
-def test_flagships_are_the_defaults():
-    assert Config().model == "gpt-5.6-sol"
+def test_fastworker_uses_trustedrouter_fast_by_default():
+    assert Config().model == "trustedrouter:trustedrouter/fast"
+    assert get_descriptor("trustedrouter").recommended_model == "trustedrouter/fast"
+
+
+def test_provider_flagships_remain_recommended():
     assert get_descriptor("openai").recommended_model == "gpt-5.6-sol"
     assert get_descriptor("anthropic").recommended_model == "claude-fable-5"
 

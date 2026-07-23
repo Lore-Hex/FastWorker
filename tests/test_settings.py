@@ -22,6 +22,7 @@ def test_resolve_api_key_prefers_env(monkeypatch, tmp_path):
 
 def test_resolve_api_key_falls_back_to_store(monkeypatch, tmp_path):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("TRUSTEDROUTER_API_KEY", raising=False)
     secrets = SecretStore(path=tmp_path / "secrets.json")
     assert resolve_api_key(secrets) is None
     secrets.put("provider:openai", {"type": "api_key", "api_key": "sk-store-999"})
@@ -35,6 +36,7 @@ def test_settings_rest_roundtrip(tmp_path, monkeypatch):
     from coworker.server.manager import SessionManager
 
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("TRUSTEDROUTER_API_KEY", raising=False)
     monkeypatch.setenv("COWORKER_STATE_DIR", str(tmp_path / "state"))
     manager = SessionManager(data_dir=tmp_path / "data")
     client = TestClient(create_app(manager))
@@ -43,7 +45,7 @@ def test_settings_rest_roundtrip(tmp_path, monkeypatch):
     assert (
         before["has_key"] is False
         and before["source"] is None
-        and before["provider"] == "openai"
+        and before["provider"] == "trustedrouter"
     )
     assert before["onboarded"] is False and before["model"] in before["models"]
 
@@ -58,6 +60,9 @@ def test_settings_rest_roundtrip(tmp_path, monkeypatch):
 
     after = client.get("/v1/settings").json()
     assert after["has_key"] is True
+    assert after["provider"] == "trustedrouter"
+    assert manager.secrets.get("provider:trustedrouter")["api_key"] == "sk-secret-xyz"
+    assert manager.secrets.get("provider:openai") is None
     # the key value is never returned by either endpoint
     assert "sk-secret-xyz" not in str(set_resp) and "api_key" not in after
 
@@ -140,8 +145,8 @@ def test_scratch_base_setting_persists_and_drives_provisioning(tmp_path, monkeyp
     data_dir = tmp_path / "data"
     client = TestClient(create_app(SessionManager(data_dir=data_dir)))
 
-    # defaults to ~/OpenWorker
-    assert client.get("/v1/settings").json()["scratch_base"] == "~/OpenWorker"
+    # defaults to ~/FastWorker
+    assert client.get("/v1/settings").json()["scratch_base"] == "~/FastWorker"
 
     base = tmp_path / "my coworker files"
     resp = client.post("/v1/settings/scratch-base", json={"path": str(base)}).json()

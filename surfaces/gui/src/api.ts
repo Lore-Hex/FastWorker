@@ -404,7 +404,7 @@ export interface Connector {
   installations?: GithubInstallation[]; // GitHub only: App installations (managed relay)
 }
 
-// --- OpenWorker Cloud (optional sign-in; manual token paste always works) ---
+// --- FastWorker Cloud (optional sign-in; manual token paste always works) ---
 
 export interface CloudStatus {
   signed_in: boolean;
@@ -1474,7 +1474,7 @@ export interface SlackMember {
 }
 
 // One channel from the workspace roster. Private channels appear only where the
-// bot is a member (Slack API constraint); is_member=false → "invite @OpenWorker" hint.
+// bot is a member (Slack API constraint); is_member=false → "invite @FastWorker" hint.
 export interface SlackChannelEntry {
   id: string;
   name: string;

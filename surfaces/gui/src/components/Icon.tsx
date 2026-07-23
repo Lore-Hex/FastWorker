@@ -1,6 +1,8 @@
 // A small set of clean, single-weight line icons (SF-Symbols-ish): 24px grid, 1.7 stroke,
 // currentColor, rounded caps/joins. Replaces emoji in the chrome for a crisp, consistent look.
 
+import fastworkerLogo from "../../assets/fastworker-logo.svg";
+
 export type IconName =
   | "sparkle"
   | "logo"
@@ -74,11 +76,15 @@ export function Icon({
         </svg>
       );
     case "logo":
-      // The OpenWorker mark — a 6-point star, matching the app + macOS tray icon.
       return (
-        <svg {...s} fill="currentColor" stroke="none">
-          <path d="M12.00 1.80 L13.35 9.66 L20.83 6.90 L14.70 12.00 L20.83 17.10 L13.35 14.34 L12.00 22.20 L10.65 14.34 L3.17 17.10 L9.30 12.00 L3.17 6.90 L10.65 9.66 Z" />
-        </svg>
+        <img
+          src={fastworkerLogo}
+          alt=""
+          aria-hidden="true"
+          width={size}
+          height={size}
+          className={className}
+        />
       );
     case "sidebar":
       // Clean "sidebar panel" toggle — rounded rect + divider, no chevron (one glyph both states).

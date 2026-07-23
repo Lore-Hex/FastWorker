@@ -33,7 +33,7 @@ const SETTINGS = {
   experimental_connectors: false,
   surfaces: { cowork: true, chat: false, code: true },
   nav_layout: "grouped",
-  scratch_base: "~/OpenWorker",
+  scratch_base: "~/FastWorker",
   secrets_path: "/Users/test/.config/coworker/secrets.json",
   sessions_peek: 5,
   // Token savings (PDF attachments): 2-page limit keeps the composer threshold test's
@@ -50,7 +50,7 @@ const SETTINGS = {
 
 const PERSONAS = {
   personas: [
-    { id: "cowork", name: "OpenWorker", icon: "cowork", tagline: "Produce a deliverable — research, analysis, scripts", needs_workspace: true, builtin: true, family: "knowledge", workspace: "deliverable", tools: ["files", "search"], enabled: true, surfaced: true, default: true },
+    { id: "cowork", name: "FastWorker", icon: "cowork", tagline: "Produce a deliverable — research, analysis, scripts", needs_workspace: true, builtin: true, family: "knowledge", workspace: "deliverable", tools: ["files", "search"], enabled: true, surfaced: true, default: true },
     { id: "code", name: "Code", icon: "code", tagline: "Work in a codebase — files, git, shell", needs_workspace: true, builtin: true, family: "code", workspace: "git", tools: ["code_files", "git"], enabled: true, surfaced: true, default: false },
     { id: "chat", name: "Chat", icon: "chat", tagline: "Quick questions — no workspace", needs_workspace: false, builtin: true, family: "knowledge", workspace: "none", tools: [], enabled: true, surfaced: false, default: false },
     { id: "ops", name: "Ops Coworker", icon: "wrench", tagline: "Operate and investigate — runbooks, logs, infrastructure", needs_workspace: true, builtin: true, family: "knowledge", workspace: "deliverable", tools: ["files", "shell"], enabled: true, surfaced: true, default: false },
@@ -64,7 +64,7 @@ const PERSONAS = {
 const PINNED_SESSION = {
   session_id: "pinned-cowork-1",
   title: "Draft the launch note",
-  workspace: "/Users/test/OpenWorker/launch-note",
+  workspace: "/Users/test/FastWorker/launch-note",
   agent: "cowork",
   model: "anthropic:claude-opus-4-8",
   mode: "interactive",
@@ -101,7 +101,7 @@ const EXTRA_SESSIONS = Array.from({ length: 7 }, (_, i) => ({
 const OPS_SESSION = {
   session_id: "ops-1",
   title: "Ops triage",
-  workspace: "/Users/test/OpenWorker/ops-triage",
+  workspace: "/Users/test/FastWorker/ops-triage",
   agent: "ops",
   model: "anthropic:claude-opus-4-8",
   mode: "interactive",
@@ -218,7 +218,7 @@ const GALLERY_PERSONAS = [
     description: "A sales-focused coworker.",
     family: "knowledge",
     workspace: "deliverable",
-    publisher: "OpenWorker",
+    publisher: "FastWorker",
     recommended_connectors: ["hubspot", "gmail"],
     risk_summary: "Declarative manifest; no executable code.",
     featured: true,
@@ -232,7 +232,7 @@ const GALLERY_PERSONAS = [
     description: "A recruiting coworker.",
     family: "knowledge",
     workspace: "deliverable",
-    publisher: "OpenWorker",
+    publisher: "FastWorker",
     recommended_connectors: ["gmail"],
     risk_summary: "Declarative manifest; no executable code.",
     featured: false,
@@ -243,7 +243,7 @@ const GALLERY_PERSONAS = [
 // `default_connections` as arrays, so these must be present (not the catch-all {}).
 const PERSONA_DETAIL = {
   id: "cowork",
-  name: "OpenWorker",
+  name: "FastWorker",
   icon: "cowork",
   tagline: "Produce a deliverable — research, analysis, scripts",
   description: "",
@@ -321,7 +321,7 @@ const AUTOMATION_RUNS = [
   },
 ];
 
-const PRIMARY_ROOT = { path: "/Users/test/OpenWorker/launch-note", writable: true, label: "scratch", primary: true, exists: true };
+const PRIMARY_ROOT = { path: "/Users/test/FastWorker/launch-note", writable: true, label: "scratch", primary: true, exists: true };
 const baseName = (p: string) => p.split("/").filter(Boolean).pop() || p;
 
 const PROVIDERS = [
@@ -330,7 +330,7 @@ const PROVIDERS = [
   // anthropic: configured but never used ("Not used yet").
   { name: "anthropic", title: "Claude (Anthropic)", needs_key: true, fields: [{ key: "api_key", label: "API key", secret: true, required: true, help: "", placeholder: "sk-…" }], configured: true, values: {}, suggested_models: ["claude-opus-4-8"], key_set_at: null, last_used_at: null },
   // trustedrouter: first-class OpenAI-compatible multi-model backend.
-  { name: "trustedrouter", title: "TrustedRouter", needs_key: true, blurb: "Uses TrustedRouter's OpenAI-compatible API — the endpoint is prefilled, just add your key.", fields: [{ key: "api_key", label: "TrustedRouter API key", secret: true, required: true, help: "", placeholder: "" }, { key: "base_url", label: "Endpoint", secret: false, required: false, help: "TrustedRouter's attested OpenAI-compatible API.", placeholder: "https://api.trustedrouter.com/v1", default: "https://api.trustedrouter.com/v1" }], configured: false, values: {}, suggested_models: ["trustedrouter/auto", "trustedrouter/zdr"], key_set_at: null, last_used_at: null },
+  { name: "trustedrouter", title: "TrustedRouter", needs_key: true, blurb: "Uses TrustedRouter's OpenAI-compatible API — the endpoint is prefilled, just add your key.", recommended_model: "trustedrouter/fast", fields: [{ key: "api_key", label: "TrustedRouter API key", secret: true, required: true, help: "", placeholder: "" }, { key: "base_url", label: "Endpoint", secret: false, required: false, help: "TrustedRouter's attested OpenAI-compatible API.", placeholder: "https://api.trustedrouter.com/v1", default: "https://api.trustedrouter.com/v1" }], configured: false, values: {}, suggested_models: ["trustedrouter/fast", "trustedrouter/auto", "trustedrouter/zdr"], key_set_at: null, last_used_at: null },
   // zai: an OpenAI-compatible vendor — unconfigured, with a prefilled editable endpoint + blurb.
   { name: "zai", title: "Z AI (GLM)", needs_key: true, blurb: "Uses Z AI's OpenAI-compatible API — the endpoint is prefilled, just add your key.", fields: [{ key: "api_key", label: "Z AI API key", secret: true, required: true, help: "", placeholder: "" }, { key: "base_url", label: "Endpoint", secret: false, required: false, help: "Prefilled with Z AI's international endpoint.", placeholder: "https://api.z.ai/api/paas/v4", default: "https://api.z.ai/api/paas/v4" }], configured: false, values: {}, suggested_models: ["glm-5.2"], key_set_at: null, last_used_at: null },
   // ollama: keyless local provider — "configured" without proving anything runs; the

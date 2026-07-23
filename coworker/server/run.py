@@ -127,7 +127,7 @@ def _ensure_ca_bundle() -> None:
 def main(argv=None) -> None:
     _ensure_ca_bundle()
     cfg = load_config()  # global config supplies defaults
-    parser = argparse.ArgumentParser(prog="openworker-server")
+    parser = argparse.ArgumentParser(prog="fastworker-server")
     parser.add_argument("--cwd", default=None, help="optional seed/default workspace")
     parser.add_argument("--model", default=cfg.model)
     parser.add_argument(

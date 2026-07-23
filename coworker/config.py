@@ -38,7 +38,7 @@ DEFAULT_ALLOWED_COMMANDS = [
 
 @dataclass
 class Config:
-    model: str = "gpt-5.6-sol"
+    model: str = "trustedrouter:trustedrouter/fast"
     mode: str = "interactive"
     max_iterations: int = 150
     allowed_commands: list[str] = field(
@@ -51,7 +51,7 @@ class Config:
     port: int = 8765
     # Web search provider: "duckduckgo" (keyless default) | "tavily" | "brave" (need a key).
     web_search_provider: str = "duckduckgo"
-    # OpenWorker Cloud (sign-in + managed connectors). Config, never constants:
+    # FastWorker Cloud (sign-in + managed connectors). Config, never constants:
     # dev/staging/BYO-VPC deployments point these at their own instances.
     cloud_base_url: str = "https://api.openworker.com"
     # Auth0 tenant + API audience are registered identifiers, not branding: the

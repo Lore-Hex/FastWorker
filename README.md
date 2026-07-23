@@ -1,114 +1,169 @@
-# OpenWorker
+<p align="center">
+  <img src="surfaces/gui/assets/fastworker-logo.svg" width="88" height="88" alt="FastWorker logo">
+</p>
 
-**[openworker.com](https://openworker.com)** · [Download](#download) · [Issues](https://github.com/andrewyng/openworker/issues)
+<h1 align="center">FastWorker</h1>
 
-> **Beta** - OpenWorker is in open beta: fully usable, updates itself, and we're actively polishing rough edges. [Issues](https://github.com/andrewyng/openworker/issues) welcome.
+<p align="center">
+  An open-source desktop AI worker powered by
+  <a href="https://trustedrouter.com">TrustedRouter</a>.
+</p>
 
-**AI that gets your everyday tasks done.** OpenWorker is an open-source AI coworker that lives on your desktop and delivers **finished work**, not just chat: a polished document, a Slack reply with the numbers, an updated calendar, a triaged inbox.
+<p align="center">
+  <a href="https://github.com/Lore-Hex/FastWorker/actions/workflows/ci.yml"><img src="https://github.com/Lore-Hex/FastWorker/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-0a0e0b.svg" alt="MIT license"></a>
+</p>
 
-It runs on your machine and doesn't lock you into any model: bring your own API key for OpenAI, Anthropic, Google, or an open-weight provider, or run fully local with Ollama. Your data leaves your machine only through the model and integrations *you* choose.
+FastWorker is an AI coworker that lives on your desktop and produces finished
+work, not just chat. It can prepare documents, analyze local files, update
+connected tools, run scheduled work, and ask for approval before consequential
+actions.
 
-[![How OpenWorker works](docs/assets/how-it-works.png)](https://openworker.com)
+TrustedRouter is the default provider and `trustedrouter/fast` is the default
+model. One key gives FastWorker a low-latency route across current models while
+keeping the desktop app provider-independent.
 
-## Download
+## Why FastWorker
 
-[**⬇ macOS (Apple Silicon)**](https://download.openworker.com/mac)
-<sub>macOS 12+ · signed & notarized · auto-updates</sub>
+- **Gets work done:** creates files, reports, spreadsheets, messages, and other
+  concrete deliverables.
+- **Fast by default:** starts with `trustedrouter/fast`, TrustedRouter's
+  low-latency multi-model route.
+- **Local first:** the agent loop, conversations, connector tokens, and model
+  keys stay on your computer.
+- **Model freedom:** switch among TrustedRouter, OpenAI, Anthropic, Gemini,
+  open-weight providers, or local Ollama models.
+- **Approval gates:** sending messages, changing calendars, and running commands
+  require approval unless you explicitly allow them.
+- **Open source:** the desktop UI, Python agent server, packaging, and release
+  automation are all available in this repository.
 
-[**⬇ Windows 10/11 (x64)**](https://download.openworker.com/windows)
-<sub>builds are not yet code-signed, so SmartScreen will warn; signing is in progress</sub>
+## Quick start
 
-Open the app, add a model key (or point it at Ollama), and ask for something real.
+Prerequisites: Python 3.10+, Node 20+, and a
+[TrustedRouter API key](https://trustedrouter.com/console/api-keys).
+
+```shell
+git clone https://github.com/Lore-Hex/FastWorker.git
+cd FastWorker
+
+bash packaging/setup_dev_env.sh
+export TRUSTEDROUTER_API_KEY="sk-tr-..."
+
+# Terminal 1: local agent server
+.venv/bin/fastworker-server --cwd ~/FastWorker --port 8765
+
+# Terminal 2: web UI
+cd surfaces/gui
+npm install
+npm run dev
+```
+
+Open the Vite URL shown in the second terminal. You can also leave the
+environment variable unset and add the key during onboarding.
+
+For the native desktop shell, install the Rust toolchain with
+[rustup](https://rustup.rs/), then run:
+
+```shell
+cd surfaces/gui
+npm run tauri dev
+```
+
+## Default model
+
+FastWorker routes its initial model as:
+
+```text
+provider: TrustedRouter
+model:    trustedrouter/fast
+endpoint: https://api.trustedrouter.com/v1
+```
+
+The internal routed identifier is
+`trustedrouter:trustedrouter/fast`: the first prefix selects FastWorker's
+TrustedRouter adapter, and the remaining model ID is sent to the
+OpenAI-compatible API.
+
+You can change the default model or add provider keys under **Settings > Models**.
+FastWorker includes first-class setup for TrustedRouter, OpenAI, Anthropic,
+Gemini, Z.ai, DeepSeek, Moonshot, MiniMax, Qwen, xAI, Mistral, Together,
+Fireworks, and Ollama.
 
 ## How it works
 
-1. Tell OpenWorker the outcome you want - "prepare a customer brief," "untangle my calendar," "draft a report," "check where the release stands across Jira and GitHub."
-2. It breaks the task into steps and works across your desktop, files, and connected apps.
-3. Before anything consequential - sending a message, changing a calendar, running a command - it checks in and you approve or redirect.
-4. You get the finished deliverable, not a to-do list.
-
-Under the hood:
-
 ```text
-┌────────────────────────────────────────────────┐
-│              OpenWorker desktop app            │  native shell + GUI
-├────────────────────────────────────────────────┤
-│           local agent server (Python)          │  engine · tools · connectors - built on aisuite
-├───────────────┬────────────────┬───────────────┤
-│  your files   │   your tools   │  your model   │  everything runs with your keys,
-│  & terminal   │ 25+ connectors │  any provider │  on your machine
-└───────────────┴────────────────┴───────────────┘
++------------------------------------------------+
+|              FastWorker desktop app            |
++------------------------------------------------+
+|            local Python agent server           |
+|       engine | tools | approvals | schedules   |
++----------------+---------------+---------------+
+|  local files   |  connectors   |  model API    |
+|  and terminal  |  and MCP      |  of choice    |
++----------------+---------------+---------------+
 ```
 
-## What it can do
+1. Describe the outcome you want.
+2. FastWorker plans and performs the work with the tools you allow.
+3. It pauses for approval before sensitive actions.
+4. It returns the completed result and any generated files.
 
-- **Produce real deliverables** - documents, spreadsheets, reports, and web pages land as files you can open and share.
-- **Work from Slack** - mention `@OpenWorker` in a channel; a session opens on your desktop, the work happens with your tools, and the answer comes back as a thread reply.
-- **Use your everyday tools** - 25+ integrations including GitHub, Slack, Jira, Notion, Linear, HubSpot, Outlook, monday.com, Gmail, and Google Calendar, plus your **terminal and local files**. Any tool reachable over [MCP](https://modelcontextprotocol.io/) plugs in too, with per-tool control.
-- **Run on a schedule** - automations for recurring work: a morning brief, a weekly report, a standing watch over a channel. Runs land in the app with full transcripts.
-- **Ask before acting** - writes, sends, and shell commands are approval-gated. Unattended runs park their asks in an inbox instead of acting on their own.
-
-## Bring your own model
-
-Model access is yours: pick a provider, paste your key, switch anytime. Supported out of the box:
-
-**OpenAI · Anthropic · Google Gemini · Inkling (Thinking Machines) · GLM (Z.ai) · DeepSeek · Kimi (Moonshot) · Qwen · MiniMax · Mistral · Grok (xAI)** - plus multi-model routing through **[TrustedRouter](https://trustedrouter.com)**, open-weight models via **Together** and **Fireworks**, and fully local models via **Ollama**.
-
-A curated model list marks what we've verified for tool-calling work. Adding any model string works at your own risk.
+FastWorker supports local files and shell tools, more than 20 connectors,
+Model Context Protocol servers, recurring automations, Slack-triggered work,
+and local voice transcription.
 
 ## Privacy
 
-OpenWorker is local-first. Everything lives on your machine: the agent loop, your conversations, connector tokens, and model keys - all in the app's local secret store. The only cloud piece is a small service that brokers OAuth handshakes for connectors. You can always use the App without signing-in - use the connectors via manually-created credentials/API-keys.
+FastWorker stores its local state and secrets on your computer. Model requests
+leave the computer only through the provider you configure. With the default
+route, requests go through TrustedRouter's attested API gateway, which does not
+store prompt or output content. Downstream model-provider policies still apply.
+See the [TrustedRouter trust center](https://trustedrouter.com/trust) for the
+current architecture, source, provider, and retention details.
 
-## Run from source
-
-Prerequisites: Python 3.10+, Node 20+, and (for the desktop shell) the Rust toolchain via [rustup](https://rustup.rs/).
+## Tests
 
 ```shell
-git clone https://github.com/andrewyng/openworker
-cd openworker
+# Backend
+uv run --extra dev --extra messaging pytest -q
 
-# 1. One-time bootstrap - creates the Python venv at .venv
-#    (on Windows, run from Git Bash or WSL)
-bash packaging/setup_dev_env.sh
-
-# 2. Start the local agent server
-.venv/bin/openworker-server --cwd ~/some/project --port 8765
-#    (Windows: .venv\Scripts\openworker-server.exe)
-
-# 3. In a second terminal, start the UI
+# Frontend
 cd surfaces/gui
-npm install
-npm run dev        # browser UI on the Vite dev port
+NODE_OPTIONS=--no-experimental-webstorage npm test
+npm run build
+npm run e2e
+
+# Native shell
+cd src-tauri
+cargo check
 ```
-
-To run the full desktop app instead of the browser UI, replace step 3 with `npm run tauri dev` (from `surfaces/gui/`) - the Tauri shell launches the window and supervises the server itself.
-
-Tests: `.venv/bin/pytest` (server), `npm test` and `npm run e2e` in `surfaces/gui` (GUI unit + hermetic end-to-end). Desktop bundles are built with `packaging/build_dmg.sh` / `packaging/build_windows.ps1`.
 
 ## Repository layout
 
-| Directory | What's in it |
-|---|---|
-| `coworker/` | Python backend - agent engine, model providers, connectors, MCP client, memory, automations |
-| `surfaces/gui/` | Desktop app - React UI + Tauri shell that supervises the server |
-| `stt/` | Speech-to-text sidecar (Rust) for voice input |
-| `packaging/` | Installer builds (macOS DMG, Windows), auto-update manifest, dev bootstrap |
-| `docs/` | Design specs and decision logs |
+| Directory | Contents |
+| --- | --- |
+| `coworker/` | Python agent engine, providers, tools, connectors, and API |
+| `surfaces/gui/` | React UI and Tauri desktop shell |
+| `stt/` | Local speech-to-text sidecar |
+| `packaging/` | Development bootstrap and desktop release builds |
+| `docs/` | Product, architecture, and design decisions |
 | `tests/` | Backend test suite |
 
-## Built on aisuite
+## Project history
 
-OpenWorker's engine is built on [**aisuite**](https://github.com/andrewyng/aisuite), a lightweight Python library providing a unified chat-completions API across LLM providers and an agents layer with tools, toolkits, and MCP support. If you want to build your own agent harness rather than use ours, start there; this repo is a working reference for what aisuite can carry.
-
-OpenWorker was originally developed inside the aisuite repository before moving to its own home here; thanks to the aisuite contributors whose work it builds on.
+FastWorker is a fork of
+[Andrew Ng's OpenWorker](https://github.com/andrewyng/openworker), built on
+[aisuite](https://github.com/andrewyng/aisuite). The fork preserves the MIT
+license and upstream attribution while making TrustedRouter and
+`trustedrouter/fast` the default model path.
 
 ## Contributing
 
-Contributions and bug reports are welcome - open an [issue](https://github.com/andrewyng/openworker/issues) or a pull request. The app updates itself, so fixes reach installs quickly.
-For any PR, please attach screenshots of what was broken and how it is fixed now. We will shortly add features that you can contribute to.
-Please note that we are actively developing based off a internal list and goal, so we may not approve PRs that add features that are already under-development or deviates from our vision.
+Issues and pull requests are welcome in
+[Lore-Hex/FastWorker](https://github.com/Lore-Hex/FastWorker). Include tests and
+screenshots for user-interface changes.
 
 ## License
 
-MIT - see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

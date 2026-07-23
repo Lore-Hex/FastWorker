@@ -107,7 +107,7 @@ class SessionManager:
         *,
         workspace: Optional[str | Path] = None,  # default/seed workspace (e.g. --cwd)
         data_dir: Optional[str | Path] = None,
-        model: str = "gpt-5.6-sol",
+        model: str = "trustedrouter:trustedrouter/fast",
         mode: Mode = Mode.INTERACTIVE,
         provider: Optional[ProviderClient] = None,
     ) -> None:
@@ -260,7 +260,7 @@ class SessionManager:
             out.append({"path": path, "name": p.name, "exists": p.is_dir()})
         return out
 
-    DEFAULT_SCRATCH_BASE = "~/OpenWorker"
+    DEFAULT_SCRATCH_BASE = "~/FastWorker"
 
     def scratch_base(self) -> Path:
         """Common area for per-conversation scratch directories. Configurable via prefs."""
@@ -1471,8 +1471,8 @@ class SessionManager:
             added = rec if name == "openai" else f"{name}:{rec}"
             self.add_model(added)
         # First working provider wins the default: if the current default model belongs to a
-        # provider with no usable config (the fresh-install gpt-5.6-sol case), switch the default to
-        # this provider's model. A default that already works is never stolen.
+        # provider with no usable config (the fresh-install TrustedRouter case), switch the
+        # default to this provider's model. A default that already works is never stolen.
         if added and not self._provider_configured(self._model_provider(self.model)):
             self.set_default_model(added)
         return {"ok": True, "provider": name, "recommended_model": rec}
@@ -1661,8 +1661,13 @@ class SessionManager:
         """Model-access + UI status. Never returns the key; `source` says where it comes from."""
         import os
 
-        env_key = bool(os.environ.get("OPENAI_API_KEY"))
-        stored = bool((self.secrets.get("provider:openai") or {}).get("api_key"))
+        default_provider = self._model_provider(self.model)
+        descriptor = get_descriptor(default_provider)
+        env_name = descriptor.env_key if descriptor else None
+        env_key = bool(env_name and os.environ.get(env_name))
+        stored = bool(
+            (self.secrets.get(f"provider:{default_provider}") or {}).get("api_key")
+        )
         # Only surface models whose provider is actually configured — the composer picker
         # reflects exactly what's connected. The active default is always kept selectable
         # (it's hidden behind the "No model" state until a provider is connected anyway).
@@ -1680,7 +1685,7 @@ class SessionManager:
         from ..providers.matrix import model_labels
 
         return {
-            "provider": "openai",
+            "provider": default_provider,
             "model": self.model,
             "models": selectable,
             # Curated-matrix display names ({full id → "GLM-5.2 · via Together"}) so every
@@ -1807,16 +1812,23 @@ class SessionManager:
         return {"ok": True, **settings}
 
     def set_model_key(self, api_key: str) -> dict[str, Any]:
-        """Persist the model API key to the SecretStore (0600). The new provider client is
-        built lazily on the next turn, so it picks the key up without a restart."""
+        """Persist a key for the current default model's provider (0600).
+
+        This endpoint predates the provider gallery. Following the selected default
+        keeps API clients and fresh FastWorker installs provider-agnostic.
+        """
         api_key = (api_key or "").strip()
         if not api_key:
             return {"ok": False, "error": "empty api key"}
+        provider = self._model_provider(self.model)
+        descriptor = get_descriptor(provider)
+        if descriptor is None or not descriptor.needs_key:
+            return {"ok": False, "error": f"{provider} does not accept an API key"}
         # Merge, don't replace: the profile may also hold a custom endpoint (base_url).
-        profile = dict(self.secrets.get("provider:openai") or {})
+        profile = dict(self.secrets.get(f"provider:{provider}") or {})
         profile.update({"type": "api_key", "api_key": api_key})
-        self.secrets.put("provider:openai", profile)
-        self._refresh_provider("openai")  # rebuild the OpenAI client with the new key
+        self.secrets.put(f"provider:{provider}", profile)
+        self._refresh_provider(provider)
         return {"ok": True, **self.get_settings()}
 
     def set_default_model(self, model: str) -> dict[str, Any]:
@@ -1837,7 +1849,7 @@ class SessionManager:
 
     def set_scratch_base(self, path: str) -> dict[str, Any]:
         """Set + persist the common area where each Cowork conversation's scratch directory is
-        created (default ~/OpenWorker). The raw value is stored so the UI shows it as entered;
+        created (default ~/FastWorker). The raw value is stored so the UI shows it as entered;
         new conversations use it immediately (existing ones keep their provisioned dir).
         """
         path = (path or "").strip()
@@ -2600,7 +2612,7 @@ class SessionManager:
 
     # -- mention router (§31) ----------------------------------------------------
     async def _route_mention(self, event, ms: MessageSource, subs) -> None:
-        """@OpenWorker tagged in a channel. A subscribed (user-connected) coworker owns the channel
+        """@FastWorker tagged in a channel. A subscribed (user-connected) coworker owns the channel
         and must answer; otherwise the per-thread coworker session handles it — spawned on the
         first tag, steered by follow-ups (deduped on the thread target)."""
         from ..connectors.base import format_target
