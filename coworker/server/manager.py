@@ -77,7 +77,7 @@ from ..providers import (
     verify_provider_key,
 )
 from ..secrets import SecretStore, state_dir
-from ..sessions import SessionRecord
+from ..sessions import CONFIDENTIAL_MODEL, SessionRecord, is_confidential_session
 from ..skills import SkillLoader
 
 _SCOPES = {s.value for s in Scope}
@@ -286,7 +286,11 @@ class SessionManager:
         self, session_id: str, *, workspace: Optional[str] = None, agent: str = "code"
     ) -> Optional[str]:
         """The workspace `get_engine` would bind — for prepping MCP tools beforehand."""
-        record = self.session_store.load(session_id)
+        record = (
+            None
+            if is_confidential_session(session_id)
+            else self.session_store.load(session_id)
+        )
         if record:
             return record.workspace or None
         ag = get_agent(agent or "code")
@@ -316,7 +320,10 @@ class SessionManager:
                 engine.question_asker = question_asker
             return engine
 
-        record = self.session_store.load(session_id)
+        confidential = is_confidential_session(session_id)
+        # Reserved confidential ids never hydrate from disk, even if a stale or malicious
+        # row somehow exists. Their transcript starts and remains process-memory-only.
+        record = None if confidential else self.session_store.load(session_id)
         is_new_session = record is None
         agent_name = (record.agent if record else agent) or "code"
         ag = get_agent(agent_name)
@@ -326,7 +333,8 @@ class SessionManager:
             model, mode, messages = record.model, Mode(record.mode), record.messages
         else:
             ws = self.resolve_workspace(workspace) if ag.needs_workspace else None
-            model, mode, messages = self.model, self.mode, None
+            model = CONFIDENTIAL_MODEL if confidential else self.model
+            mode, messages = self.mode, None
 
         if ag.needs_workspace and (not ws or not Path(ws).is_dir()):
             # Knowledge surfaces (Cowork, Ops, …) start "orphan": no folder picked →
@@ -337,7 +345,7 @@ class SessionManager:
             else:
                 return None
 
-        if ws:
+        if ws and not confidential:
             self.session_store.touch_workspace(ws)
         # Orphan surfaces are multi-root: the scratch (ws) is the primary writable root, plus any
         # folders the user added (persisted per session). Code/Chat stay single-root (roots=None).
@@ -362,7 +370,9 @@ class SessionManager:
             task_store=self.task_store,
             wake_store=self.wakes,
             session_id=session_id,
-            audit_sink=self.audit_store.append,
+            # A normal tool audit may retain argument summaries. Confidential sessions keep
+            # those events in the live transcript only, then discard them with the session.
+            audit_sink=None if confidential else self.audit_store.append,
             roots=roots,
             # WS sessions pass mode-aware callbacks (attended → live prompt, unattended → Inbox).
             # Background / self-wake / durable-resume runs have no live socket → default to the
@@ -394,7 +404,7 @@ class SessionManager:
         if record is not None and record.grants:
             self._apply_grants(engine, record.grants)
         self._engines[session_id] = engine
-        if is_new_session:
+        if is_new_session and not confidential:
             self._emit_session_created(session_id, agent_name)
         return engine
 
@@ -2984,6 +2994,8 @@ class SessionManager:
         return {"ok": True, "run": run.to_dict()}
 
     def save(self, session_id: str, engine: TurnEngine) -> None:
+        if is_confidential_session(session_id):
+            return
         executor = getattr(engine, "executor", None)
         workspace = os.path.realpath(str(executor.cwd)) if executor else ""
         self.session_store.save(
@@ -3190,8 +3202,16 @@ class SessionManager:
                         r.writable = bool(writable)
             else:
                 engine.roots.append(RootDir(path=resolved, writable=bool(writable)))
-            self.session_store.set_extra_roots(session_id, self._extra_roots_of(engine))
+            if not is_confidential_session(session_id):
+                self.session_store.set_extra_roots(
+                    session_id, self._extra_roots_of(engine)
+                )
         else:
+            if is_confidential_session(session_id):
+                return {
+                    "ok": False,
+                    "error": "confidential session is no longer active",
+                }
             # A brand-new conversation has no record yet (it's only saved after the first turn) —
             # create one now so set_extra_roots has a row to update and the folder survives.
             if self.session_store.load(session_id) is None:
@@ -3225,7 +3245,8 @@ class SessionManager:
                     for r in extra
                 ],
             )
-        self.session_store.touch_workspace(str(resolved))
+        if not is_confidential_session(session_id):
+            self.session_store.touch_workspace(str(resolved))
         return {"ok": True, "roots": self.get_roots(session_id)}
 
     def remove_root(self, session_id: str, path: str) -> dict[str, Any]:
@@ -3239,8 +3260,16 @@ class SessionManager:
                     "error": "cannot remove the primary scratch directory",
                 }
             engine.roots[:] = [r for r in engine.roots if r.path != resolved]
-            self.session_store.set_extra_roots(session_id, self._extra_roots_of(engine))
+            if not is_confidential_session(session_id):
+                self.session_store.set_extra_roots(
+                    session_id, self._extra_roots_of(engine)
+                )
         else:
+            if is_confidential_session(session_id):
+                return {
+                    "ok": False,
+                    "error": "confidential session is no longer active",
+                }
             current = self.get_roots(session_id)
             if (
                 current
@@ -3276,6 +3305,8 @@ class SessionManager:
         engine = self._engines.get(session_id)
         if engine is not None:
             return list(engine.messages)
+        if is_confidential_session(session_id):
+            return []
         record = self.session_store.load(session_id)
         return record.messages if record else []
 
@@ -3302,6 +3333,23 @@ class SessionManager:
         return {"ok": ok, "session_id": session_id}
 
     def delete_session(self, session_id: str) -> dict[str, Any]:
+        if is_confidential_session(session_id):
+            engine = self._engines.pop(session_id, None)
+            if engine is not None:
+                try:
+                    engine.request_interrupt()
+                except Exception:
+                    pass
+                # Drop references to prompt/output content immediately instead of waiting
+                # for process shutdown and garbage collection.
+                engine.messages.clear()
+            self._running_sessions.discard(session_id)
+            self._autotitle_attempts.pop(session_id, None)
+            self.subscriptions.remove_session(session_id)
+            self.mention_sessions.remove_session(session_id)
+            self.session_connections.remove_session(session_id)
+            self.inbox.resolve_session(session_id)
+            return {"ok": True, "session_id": session_id}
         if session_id.startswith("__"):
             return {"ok": False, "error": "internal sessions cannot be deleted here"}
         engine = self._engines.pop(session_id, None)

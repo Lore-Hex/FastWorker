@@ -77,6 +77,8 @@ interface Props {
   resetKey?: string;
   // Surface-specific hint shown in the empty textarea.
   placeholder?: string;
+  // Memory-only session: the TrustedRouter confidential route is fixed and visibly labeled.
+  confidential?: boolean;
 }
 
 export function Composer(props: Props) {
@@ -374,7 +376,8 @@ export function Composer(props: Props) {
       <div
         className={
           "composer max-w-3xl mx-auto rounded-2xl border border-line bg-panel shadow-sm" +
-          (dragging ? " dragging" : "")
+          (dragging ? " dragging" : "") +
+          (props.confidential ? " confidential-composer" : "")
         }
         onDragOver={(e) => {
           e.preventDefault();
@@ -475,6 +478,15 @@ export function Composer(props: Props) {
               <span className="pill-label">No model</span>
               <span className="model-warn-ico" aria-hidden>⚠</span>
             </button>
+          ) : props.confidential ? (
+            <span
+              className="confidential-model-chip"
+              data-testid="confidential-model"
+              title="Fixed route: trustedrouter/confidential"
+            >
+              <Icon name="lock" size={12} />
+              TrustedRouter Confidential
+            </span>
           ) : modelsLoaded ? (
             <Dropdown value={props.model} options={modelOptions} onChange={props.onModelChange} align="right" />
           ) : (

@@ -37,6 +37,7 @@ export type IconName =
   | "archive"
   | "trash"
   | "shield"
+  | "lock"
   | "file"
   | "fileCode"
   | "image"
@@ -121,6 +122,13 @@ export function Icon({
         <svg {...s}>
           <path d="M12 3.2l7 2.8v5.1c0 4.3-2.9 7.4-7 9.7-4.1-2.3-7-5.4-7-9.7V6l7-2.8z" />
           <path d="M9.3 12.1l1.9 1.9 3.5-3.6" />
+        </svg>
+      );
+    case "lock":
+      return (
+        <svg {...s}>
+          <rect x="5" y="10" width="14" height="10" rx="3" />
+          <path d="M8.5 10V7.5a3.5 3.5 0 0 1 7 0V10M12 14v2.5" />
         </svg>
       );
     case "file":

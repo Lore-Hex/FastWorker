@@ -110,6 +110,33 @@ body {
   min-height: 0;
 }
 
+.confidential-new-btn {
+  width: 100%;
+  min-height: 34px;
+  margin-top: 6px;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--teal-line);
+  border-radius: 8px;
+  background: var(--teal-soft);
+  color: var(--teal-ink);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: left;
+}
+.confidential-new-btn:hover {
+  border-color: color-mix(in srgb, var(--teal-ink) 42%, var(--teal-line));
+  background: color-mix(in srgb, var(--teal-soft) 72%, var(--panel));
+}
+.confidential-new-hint {
+  margin-left: auto;
+  color: color-mix(in srgb, var(--teal-ink) 64%, var(--faint));
+  font-size: 11px;
+  font-weight: 500;
+}
+
 /* ---------- collapsible left nav (⌘B + hover-peek) ---------- */
 /* Collapsed: the grid column goes to 0 so the content reclaims the width; the sidebar slides
    off-screen. Hovering the left edge (.nav-hover-zone) adds .nav-peek, floating it back OVER the
@@ -250,6 +277,10 @@ body {
   border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer;
 }
 .topbar-icon-btn:hover { color: var(--ink); background: var(--paper); }
+.topbar-icon-btn.confidential-active {
+  color: var(--teal-ink);
+  background: var(--teal-soft);
+}
 .app.tauri-overlay .main-title,
 .app.tauri-overlay .main-drag-fill {
   -webkit-app-region: drag;
@@ -265,6 +296,71 @@ body {
 .main-chat { position: relative; display: flex; flex-direction: column; min-width: 0; flex: 1; padding-top: 48px; }
 .main.rail-open .main-chat { margin-right: 332px; }
 .main-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 24px 8% 24px; }
+
+/* Confidential sessions are visually persistent, not a one-time toast. The tint stays
+   restrained so transcript readability and the regular FastWorker hierarchy remain intact. */
+.confidential-mode .main {
+  background: color-mix(in srgb, var(--teal-soft) 30%, var(--paper));
+}
+.confidential-mode .main-topbar {
+  box-shadow: inset 0 -1px var(--teal-line);
+}
+.confidential-mode .main-title-text,
+.confidential-mode .title-sub {
+  color: var(--teal-ink);
+}
+.confidential-mode .main-title-text {
+  font-weight: 600;
+}
+.confidential-banner {
+  width: min(768px, calc(100% - 32px));
+  min-height: 54px;
+  margin: 10px auto 0;
+  padding: 9px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--teal-line);
+  border-radius: 8px;
+  background: var(--teal-soft);
+  color: var(--teal-ink);
+}
+.confidential-banner-icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  border-radius: 50%;
+  background: var(--panel);
+  box-shadow: inset 0 0 0 1px var(--teal-line);
+}
+.confidential-banner-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.confidential-banner-copy strong {
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+.confidential-banner-copy span {
+  color: color-mix(in srgb, var(--teal-ink) 74%, var(--muted));
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.confidential-banner button {
+  margin-left: auto;
+  flex: none;
+  padding: 5px 7px;
+  color: var(--teal-ink);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.confidential-banner button:hover {
+  text-decoration: underline;
+}
 
 /* idle hero */
 .hero { max-width: 720px; margin: 6vh auto 0; }
@@ -456,6 +552,58 @@ button.btn.danger { color: var(--accent); }
   background: transparent; color: var(--ink); min-height: 24px; max-height: 88px; overflow: hidden;
 }
 .composer textarea::placeholder { color: var(--faint); }
+.composer.confidential-composer {
+  border-color: var(--teal-line);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--teal-line) 45%, transparent);
+}
+.confidential-model-chip {
+  min-height: 26px;
+  padding: 4px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--teal-line);
+  border-radius: 7px;
+  background: var(--teal-soft);
+  color: var(--teal-ink);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+@media (max-width: 680px) {
+  .main.rail-open .main-chat {
+    margin-right: 0;
+  }
+  .main.rail-open .main-topbar {
+    right: 0;
+  }
+  .right-rail {
+    display: none;
+  }
+  .confidential-banner {
+    width: calc(100% - 20px);
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr);
+    align-items: flex-start;
+  }
+  .confidential-banner-copy {
+    grid-column: 2;
+  }
+  .confidential-banner button {
+    grid-column: 2;
+    justify-self: start;
+    width: auto;
+    margin-left: 0;
+    padding-top: 0;
+    text-align: left;
+  }
+  .confidential-model-chip {
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
 .voice-wave-line { flex: 1; min-width: 28px; border-top: 1px dashed var(--line-strong); }
 .voice-wave-bars { height: 28px; display: inline-flex; align-items: center; gap: 2px; color: var(--accent); }
 .voice-wave-bars i {

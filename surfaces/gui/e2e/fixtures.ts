@@ -25,7 +25,14 @@ const HEALTH = { status: "ok", default_workspace: null, model: "anthropic:claude
 const SETTINGS = {
   provider: "openai",
   model: "anthropic:claude-opus-4-8",
-  models: ["anthropic:claude-opus-4-8", "gpt-5.5", "gpt-4o", "gpt-4o-mini", "o3-mini"],
+  models: [
+    "anthropic:claude-opus-4-8",
+    "trustedrouter:trustedrouter/confidential",
+    "gpt-5.5",
+    "gpt-4o",
+    "gpt-4o-mini",
+    "o3-mini",
+  ],
   has_key: true,
   model_ready: true,
   source: "store",
@@ -44,6 +51,7 @@ const SETTINGS = {
   // Curated-matrix display names (subset — mirrors /v1/settings.model_labels).
   model_labels: {
     "anthropic:claude-opus-4-8": "Claude Opus 4.8 · Anthropic",
+    "trustedrouter:trustedrouter/confidential": "Confidential · TrustedRouter",
     "zai:glm-5.2": "GLM-5.2 · Z AI",
   },
 };

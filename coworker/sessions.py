@@ -10,6 +10,15 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 
+CONFIDENTIAL_SESSION_PREFIX = "__confidential__"
+CONFIDENTIAL_MODEL = "trustedrouter:trustedrouter/confidential"
+
+
+def is_confidential_session(session_id: str) -> bool:
+    """Return whether a session is intentionally memory-only."""
+    return session_id.startswith(CONFIDENTIAL_SESSION_PREFIX)
+
+
 @dataclass
 class SessionRecord:
     session_id: str

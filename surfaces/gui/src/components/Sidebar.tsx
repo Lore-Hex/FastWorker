@@ -121,6 +121,7 @@ interface Props {
   activeSession: string;
   onSwitchAgent: (agent: string) => void;
   onNewSession: (agent: string) => void;
+  onNewConfidential: (agent: string) => void;
   onSelectSession: (id: string, workspace: string, agent: string) => void;
   onNewProject: (persona: string) => void;
   onRenameSession: (id: string, title: string) => void;
@@ -1011,6 +1012,7 @@ export function Sidebar(props: Props) {
         personas={personas}
         current={props.agent}
         onNew={props.onNewSession}
+        onConfidential={props.onNewConfidential}
         onManage={props.onManagePersonas}
       />
 
@@ -1293,11 +1295,13 @@ function NewSessionSplit({
   personas,
   current,
   onNew,
+  onConfidential,
   onManage,
 }: {
   personas: Persona[] | null;
   current: string;
   onNew: (agent: string) => void;
+  onConfidential: (agent: string) => void;
   onManage: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -1329,6 +1333,16 @@ function NewSessionSplit({
           </button>
         )}
       </div>
+      <button
+        className="confidential-new-btn"
+        data-testid="new-confidential-session"
+        onClick={() => onConfidential(solo && enabled.length === 1 ? enabled[0].id : current)}
+        title="Start a session that FastWorker will not save"
+      >
+        <Icon name="lock" size={14} />
+        <span>Confidential</span>
+        <span className="confidential-new-hint">History off</span>
+      </button>
       {open && (
         <>
           <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />

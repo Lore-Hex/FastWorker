@@ -1677,14 +1677,26 @@ export type Handlers = {
   onClose?: () => void;
 };
 
+export type SessionOptions = {
+  confidential?: boolean;
+};
+
 export class Session {
   private ws: WebSocket;
   // Payloads sent before the socket finished opening, replayed on `onopen`. Belt-and-suspenders
   // against the first message being dropped if the user sends in the connect window.
   private outbox: object[] = [];
 
-  constructor(sessionId: string, workspace: string, agent: string, handlers: Handlers) {
-    const q = `?workspace=${encodeURIComponent(workspace)}&agent=${encodeURIComponent(agent)}`;
+  constructor(
+    sessionId: string,
+    workspace: string,
+    agent: string,
+    handlers: Handlers,
+    options: SessionOptions = {},
+  ) {
+    const params = new URLSearchParams({ workspace, agent });
+    if (options.confidential) params.set("confidential", "1");
+    const q = `?${params.toString()}`;
     this.ws = new WebSocket(`${wsBase()}/ws/session/${sessionId}${q}`);
     this.ws.onmessage = (e) => handlers.onEvent(JSON.parse(e.data));
     this.ws.onopen = () => {

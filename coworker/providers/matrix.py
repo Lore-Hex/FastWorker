@@ -94,6 +94,9 @@ MATRIX: dict[str, ModelEntry] = {
     "trustedrouter:trustedrouter/e2e": ModelEntry(
         "E2E · TrustedRouter (confidential routes)"
     ),
+    "trustedrouter:trustedrouter/confidential": ModelEntry(
+        "Confidential · TrustedRouter (private session routing)"
+    ),
     "trustedrouter:trustedrouter/cheap": ModelEntry(
         "Cheap · TrustedRouter (cost-optimized)"
     ),

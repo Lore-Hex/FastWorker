@@ -55,8 +55,13 @@ import { ApprovalCard } from "./components/ApprovalCard";
 import { DirectoryRequestCard } from "./components/DirectoryRequestCard";
 import { PlanCard } from "./components/PlanCard";
 
+const DEFAULT_MODEL = "trustedrouter:trustedrouter/fast";
+const CONFIDENTIAL_MODEL = "trustedrouter:trustedrouter/confidential";
+const CONFIDENTIAL_SESSION_PREFIX = "__confidential__";
+
 const newId = () =>
   (crypto as any).randomUUID ? crypto.randomUUID().slice(0, 12) : Math.random().toString(36).slice(2, 14);
+const newConfidentialId = () => `${CONFIDENTIAL_SESSION_PREFIX}${newId()}`;
 
 const SUGGESTIONS = [
   { ico: "⚙", text: "Run the test suite and summarize any failures." },
@@ -146,7 +151,7 @@ export function App() {
   const [branch, setBranch] = useState<string | null>(null);
   const [showGate, setShowGate] = useState(false);
   const [agent, setAgent] = useState("cowork");
-  const [model, setModel] = useState("trustedrouter:trustedrouter/fast");
+  const [model, setModel] = useState(DEFAULT_MODEL);
   const [models, setModels] = useState<string[]>([]);
   const [modelLabels, setModelLabels] = useState<Record<string, string>>({});
   const [surfaces, setSurfaces] = useState<SurfaceVisibility>({ cowork: true, chat: false, code: false });
@@ -174,6 +179,7 @@ export function App() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [projects, setProjects] = useState<RecentWorkspace[]>([]);
   const [sessionId, setSessionId] = useState<string>(newId());
+  const confidential = sessionId.startsWith(CONFIDENTIAL_SESSION_PREFIX);
   // Automation-run context (§ owner ask 2026-07-04): which task an open __run__ session belongs
   // to, driving the banner + "Back to runs". Best-effort — a run session without context still
   // shows a generic banner (detected by its __run__ id).
@@ -217,11 +223,15 @@ export function App() {
     setSurface("persona");
   };
   const [browserRefreshKey, setBrowserRefreshKey] = useState(0);
-  const [railHidden, setRailHidden] = useState(false);
+  const [railHidden, setRailHidden] = useState(() => window.innerWidth <= 680);
   // Left-nav collapse (⌘B): when collapsed the sidebar leaves the grid so content reclaims the
   // width; hovering the left edge peeks it back as a floating overlay. Persisted per-device.
   const [navCollapsed, setNavCollapsed] = useState<boolean>(() => {
-    try { return localStorage.getItem(NAV_COLLAPSED_KEY) === "1"; } catch { return false; }
+    try {
+      return localStorage.getItem(NAV_COLLAPSED_KEY) === "1" || window.innerWidth <= 680;
+    } catch {
+      return false;
+    }
   });
   const [navPeek, setNavPeek] = useState(false);
   // While an artifact preview is open we auto-collapse the nav (#3). Remember the pre-preview
@@ -346,6 +356,7 @@ export function App() {
   }, []);
 
   const sessionRef = useRef<Session | null>(null);
+  const normalModelRef = useRef(DEFAULT_MODEL);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   // A prompt to auto-send once the next session connects (used by "Run now").
   const pendingPromptRef = useRef<string | null>(null);
@@ -424,6 +435,7 @@ export function App() {
         .then(async (h) => {
           if (cancelled) return;
           setModel(h.model);
+          normalModelRef.current = h.model;
           // First-run setup wizard (desktop): show until the user completes/dismisses it.
           if (isTauri()) {
             getSettings()
@@ -524,8 +536,10 @@ export function App() {
   }, [agent, surfaces]);
 
   useEffect(() => {
-    if (surface === "session") rememberLastSession(agent, sessionId, workspace);
-  }, [surface, agent, sessionId, workspace]);
+    if (surface === "session" && !confidential) {
+      rememberLastSession(agent, sessionId, workspace);
+    }
+  }, [surface, agent, sessionId, workspace, confidential]);
 
   // (re)connect when workspace, session, or agent changes
   useEffect(() => {
@@ -556,7 +570,10 @@ export function App() {
       switch (ev.type) {
         case "ready":
           setConnected(true);
-          if (d.model) setModel(d.model);
+          if (d.model) {
+            setModel(d.model);
+            if (!confidential) normalModelRef.current = d.model;
+          }
           if (d.mode) setMode(d.mode);
           // Cowork: adopt the server-provisioned scratch dir (only when we don't already have one).
           if (d.workspace) setWorkspace((cur) => cur || d.workspace);
@@ -713,22 +730,31 @@ export function App() {
       }
     };
 
-    const session = new Session(sessionId, workspace || "", agent, {
-      onEvent: handleEvent,
-      onOpen: () => {
-        setConnected(true);
-        // Auto-send the task prompt once a "Run now" session connects.
-        const p = pendingPromptRef.current;
-        if (p) {
-          pendingPromptRef.current = null;
-          setItems((prev) => [...prev, { kind: "user", text: p, ts: Date.now() / 1000 }]);
-          sessionRef.current?.userMessage(p);
-        }
+    const session = new Session(
+      sessionId,
+      workspace || "",
+      agent,
+      {
+        onEvent: handleEvent,
+        onOpen: () => {
+          setConnected(true);
+          // Auto-send the task prompt once a "Run now" session connects.
+          const p = pendingPromptRef.current;
+          if (p) {
+            pendingPromptRef.current = null;
+            setItems((prev) => [...prev, { kind: "user", text: p, ts: Date.now() / 1000 }]);
+            sessionRef.current?.userMessage(p);
+          }
+        },
+        onClose: () => setConnected(false),
       },
-      onClose: () => setConnected(false),
-    });
+      { confidential },
+    );
     sessionRef.current = session;
-    return () => session.close();
+    return () => {
+      session.close();
+      if (confidential) deleteSession(sessionId).catch(() => {});
+    };
     // NOTE: `workspace` is intentionally NOT a dependency. Every real workspace change
     // (pick folder, select/switch session, new session) is paired with a `sessionId`
     // change, so the socket still reconnects when it should. The one workspace-only change
@@ -737,7 +763,7 @@ export function App() {
     // first connect, dropping the user's first message (the "send twice" bug). The scratch
     // dir is deterministic from `sessionId` server-side, so skipping that reconnect is safe.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [booting, sessionId, agent, refreshSessions]);
+  }, [booting, sessionId, agent, refreshSessions, confidential]);
 
   // Stream-following (FB-004): auto-scroll only while the user is AT the bottom, so scrolling
   // up to read during a streaming turn sticks. `atBottomRef` is the live truth (per scroll
@@ -802,6 +828,11 @@ export function App() {
   // change + after each turn, plus a slow poll so an unattended agent's new question surfaces.
   useEffect(() => {
     if (surface !== "session") return;
+    if (confidential) {
+      setSessionInbox([]);
+      markUnattended(false);
+      return;
+    }
     const load = () => {
       getInbox(sessionId, "pending").then(setSessionInbox).catch(() => setSessionInbox([]));
       getUnattended(sessionId).then(markUnattended).catch(() => markUnattended(false));
@@ -809,7 +840,7 @@ export function App() {
     load();
     const t = setInterval(load, 4000);
     return () => clearInterval(t);
-  }, [surface, sessionId, browserRefreshKey, markUnattended]);
+  }, [surface, sessionId, browserRefreshKey, markUnattended, confidential]);
 
   const send = (text: string, attachments?: Attachment[]) => {
     setItems((p) => [...p, { kind: "user", text, attachments, ts: Date.now() / 1000 }]);
@@ -858,13 +889,15 @@ export function App() {
     sessionRef.current?.setMode(m);
   };
   const changeModel = (m: string) => {
-    if (running) return; // the server refuses mid-turn rebinds — don't let the header lie
+    if (running || confidential) return;
     setModel(m);
+    normalModelRef.current = m;
     sessionRef.current?.setModel(m);
   };
 
   const startNewSession = (forAgent?: string) => {
     const target = forAgent || agent;
+    if (confidential) setModel(normalModelRef.current);
     setSurface("session"); // return to the conversation view if we were on a sub-view
     setItems([]);
     setStreaming("");
@@ -886,6 +919,31 @@ export function App() {
     // server provisions a NEW scratch dir for the new session id. Code keeps its repo.
     if (!gatesWorkspace(target)) setWorkspace(null);
     setSessionId(newId());
+  };
+  const startConfidentialSession = (forAgent?: string) => {
+    const target = forAgent || agent;
+    if (!confidential) normalModelRef.current = model;
+    setSurface("session");
+    setItems([]);
+    setStreaming("");
+    setReasoningStream("");
+    setTodo([]);
+    setRunning(false);
+    setSessionInbox([]);
+    markUnattended(false);
+    if (target !== agent) {
+      setAgent(target);
+      if (gatesWorkspace(target)) {
+        setWorkspace(null);
+        setBranch(null);
+        setShowGate(true);
+      } else {
+        setShowGate(false);
+      }
+    }
+    if (!gatesWorkspace(target)) setWorkspace(null);
+    setModel(CONFIDENTIAL_MODEL);
+    setSessionId(newConfidentialId());
   };
   // Inbox → session: the item carries its session's workspace/agent, so open it directly.
   // UX-026: 5s top-right toast when a SCHEDULED automation run starts (never for
@@ -922,6 +980,11 @@ export function App() {
     setStreaming("");
     setRunning(false);
     if (ag) setAgent(ag);
+    const selected = sessions.find((s) => s.session_id === id);
+    if (selected?.model) {
+      setModel(selected.model);
+      normalModelRef.current = selected.model;
+    }
     if (!gatesWorkspace(ag)) setShowGate(false);
     if (ws && ws !== workspace) {
       setWorkspace(ws); // switch project to the session's folder
@@ -938,7 +1001,8 @@ export function App() {
   const switchAgent = async (name: string) => {
     setSurface("session");
     if (name === agent) return;
-    rememberLastSession(agent, sessionId, workspace);
+    if (!confidential) rememberLastSession(agent, sessionId, workspace);
+    else setModel(normalModelRef.current);
     const knownSessions = sessions.length ? sessions : await getSessions().catch(() => []);
     const knownProjects = projects.length ? projects : await getRecentWorkspaces().catch(() => []);
     const target = resumeTargetForAgent(name, knownSessions);
@@ -994,6 +1058,7 @@ export function App() {
     else setShowGate(!fallback);
   };
   const chooseWorkspace = (path: string, b?: string | null) => {
+    if (confidential) setModel(normalModelRef.current);
     setWorkspace(path);
     setBranch(b ?? null);
     setShowGate(false);
@@ -1009,6 +1074,7 @@ export function App() {
   // surface==="session" && gatesWorkspace(agent) guard passes even if the active session was Chat/Cowork.
   const newProject = (forAgent?: string) => {
     const target = forAgent || agent;
+    if (confidential) setModel(normalModelRef.current);
     setSurface("session");
     setItems([]);
     setStreaming("");
@@ -1083,7 +1149,7 @@ export function App() {
   // Facts subtitle (§22): the session's FIXED facts, not controls — model (+ the
   // workspace folder for project-scoped sessions). Renders only once the session has history;
   // until then the model is still choosable in the composer, so there's no locked fact to state.
-  const hasHistory = items.length > 0;
+  const hasHistory = items.length > 0 || confidential;
   // Curated labels read "Claude Opus 4.8 · Anthropic" — the provider suffix is dropdown context,
   // noise in a facts line. Fall back to the raw id without its provider prefix.
   const modelDisplay =
@@ -1094,7 +1160,7 @@ export function App() {
   const subtitleParts = [modelDisplay];
   if (isProjectScoped(personaOf(agent)) && workspace) subtitleParts.push(baseName(workspace));
   const activeInfo = sessions.find((s) => s.session_id === sessionId);
-  const activeTitle = activeInfo?.title || "New session";
+  const activeTitle = confidential ? "Confidential session" : activeInfo?.title || "New session";
 
   const desktop = isTauri();
   // Dev-only: `?overlay=1` simulates the desktop overlay layout in the browser (adds the
@@ -1145,7 +1211,8 @@ export function App() {
         "app" +
         (overlay ? " tauri-overlay" : "") +
         (navCollapsed ? " nav-collapsed" : "") +
-        (navCollapsed && navPeek ? " nav-peek" : "")
+        (navCollapsed && navPeek ? " nav-peek" : "") +
+        (confidential ? " confidential-mode" : "")
       }
     >
       {/* Dev-only fake traffic lights so ?overlay=1 previews the real desktop top-left. */}
@@ -1247,6 +1314,7 @@ export function App() {
         activeSession={sessionId}
         onSwitchAgent={switchAgent}
         onNewSession={startNewSession}
+        onNewConfidential={startConfidentialSession}
         onSelectSession={selectSession}
         onNewProject={newProject}
         onRenameSession={renameConversation}
@@ -1330,6 +1398,14 @@ export function App() {
                   <Icon name="plus" size={16} />
                 </button>
                 <button
+                  className={"topbar-icon-btn" + (confidential ? " confidential-active" : "")}
+                  onClick={() => startConfidentialSession()}
+                  aria-label="New confidential session"
+                  title="New confidential session"
+                >
+                  <Icon name="lock" size={15} />
+                </button>
+                <button
                   className="topbar-icon-btn"
                   onClick={() => setSearchOpen(true)}
                   aria-label="Search"
@@ -1357,7 +1433,7 @@ export function App() {
                 this release (owner ask 2026-07-22). */}
             {hasHistory && (
               <span className="title-sub" data-testid="session-subtitle">
-                {subtitleParts.join(" · ")}
+                {confidential ? "History off · TrustedRouter Confidential" : subtitleParts.join(" · ")}
               </span>
             )}
           </div>
@@ -1424,11 +1500,27 @@ export function App() {
                 </button>
               </div>
             )}
+            {confidential && (
+              <div className="confidential-banner" data-testid="confidential-banner">
+                <span className="confidential-banner-icon">
+                  <Icon name="lock" size={16} />
+                </span>
+                <span className="confidential-banner-copy">
+                  <strong>Confidential session</strong>
+                  <span>
+                    FastWorker will not save this conversation. Files you create and actions you
+                    take outside the chat can remain.
+                  </span>
+                </span>
+                <button onClick={() => startNewSession(agent)}>End session</button>
+              </div>
+            )}
             <div className="main-scroll" ref={scrollRef} onScroll={handleScroll}>
               {idle ? (
                 agent === "cowork" ? (
                   <SessionIntro
                     sessionId={sessionId}
+                    confidential={confidential}
                     onOpenSessionSettings={openAccess}
                     onPrefill={prefillComposer}
                   />
@@ -1520,15 +1612,22 @@ export function App() {
               onModelChange={changeModel}
               workspace={needsWorkspace(agent) ? workspace || "" : undefined}
               unattended={unattended}
-              onUnattendedChange={agent !== "chat" ? toggleUnattended : undefined}
+              onUnattendedChange={!confidential && agent !== "chat" ? toggleUnattended : undefined}
+              confidential={confidential}
               prefill={composerPrefill}
               resetKey={sessionId}
               placeholder={
                 agent === "code"
-                  ? "Ask the coder to build, fix, or explain…  (drop or paste files)"
+                  ? confidential
+                    ? "Ask confidentially…  (drop or paste files)"
+                    : "Ask the coder to build, fix, or explain…  (drop or paste files)"
                   : agent === "chat"
-                    ? "Ask anything…  (drop or paste files)"
-                    : "Ask the coworker…  (drop or paste files)"
+                    ? confidential
+                      ? "Ask confidentially…  (drop or paste files)"
+                      : "Ask anything…  (drop or paste files)"
+                    : confidential
+                      ? "Ask confidentially…  (drop or paste files)"
+                      : "Ask the coworker…  (drop or paste files)"
               }
               approvalSlot={
                 // Live inline cards are for ATTENDED sessions only; when Unattended the prompt is

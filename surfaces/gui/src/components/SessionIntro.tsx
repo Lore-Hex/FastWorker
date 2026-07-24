@@ -22,10 +22,12 @@ const GH_SLACK_PROMPT =
 
 export function SessionIntro({
   sessionId,
+  confidential = false,
   onOpenSessionSettings,
   onPrefill,
 }: {
   sessionId: string;
+  confidential?: boolean;
   // Opens the §23 Session settings drawer (sources section) — the gated rows' Configure target.
   onOpenSessionSettings: () => void;
   onPrefill: (text: string, attachments?: Attachment[]) => void;
@@ -65,11 +67,13 @@ export function SessionIntro({
   return (
     <div className="intro">
       <h1 className="greeting">
-        <span className="mark">✦</span> What should we produce?
+        <span className="mark">✦</span>{" "}
+        {confidential ? "What should we work on privately?" : "What should we produce?"}
       </h1>
       <p className="intro-lede">
-        Pick a task to start — I'll do the work and save the result. Or just type what you need
-        below.
+        {confidential
+          ? "Chat history stays off. Files you create and actions you take can remain outside the chat."
+          : "Pick a task to start — I'll do the work and save the result. Or just type what you need below."}
       </p>
 
       <div className="intro-tasks">

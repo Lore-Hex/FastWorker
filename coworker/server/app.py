@@ -19,6 +19,8 @@ from typing import Any, Optional
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+from ..sessions import CONFIDENTIAL_MODEL, is_confidential_session
+
 # Origins allowed to talk to the local sidecar. It binds to 127.0.0.1, but a page in the
 # user's own browser can still reach loopback — so without an origin gate, any website they
 # visit could read `GET /v1/sessions` (CORS was `*`) and drive a session over the WS (which
@@ -1358,6 +1360,21 @@ def create_app(manager: SessionManager) -> FastAPI:
             return
         await ws.accept()
         agent = ws.query_params.get("agent") or "code"
+        confidential = is_confidential_session(session_id)
+        ephemeral_reply: asyncio.Future[str] | None = None
+
+        async def _await_ephemeral_reply() -> str:
+            """Wait for one live-card response without writing an Inbox record."""
+            nonlocal ephemeral_reply
+            if ephemeral_reply is not None and not ephemeral_reply.done():
+                raise RuntimeError("a confidential prompt is already pending")
+            pending = asyncio.get_running_loop().create_future()
+            ephemeral_reply = pending
+            try:
+                return await pending
+            finally:
+                if ephemeral_reply is pending:
+                    ephemeral_reply = None
 
         # All four interactive prompts (approval / question / directory / plan) are parked as Inbox
         # items and awaited via inbox.wait — so they survive a dropped socket (redelivered on
@@ -1365,6 +1382,8 @@ def create_app(manager: SessionManager) -> FastAPI:
         # Unattended → the cross-session Inbox; attended → inline in this session only. The agent
         # stays blocked until the item is resolved (live WS response, REST, or a bound channel).
         def _visibility() -> str:
+            if confidential:
+                return VIS_INLINE
             return (
                 VIS_INBOX
                 if manager.unattended.is_unattended(session_id)
@@ -1381,6 +1400,11 @@ def create_app(manager: SessionManager) -> FastAPI:
         async def approver(_request) -> ApprovalOutcome:
             # The engine has already emitted PERMISSION_REQUIRED (the live inline card). Park the
             # item so the answer can also come from the Inbox / a reconnect / after a restart.
+            if confidential:
+                resolution = await _await_ephemeral_reply()
+                return manager.approval_outcome(
+                    resolution, _request, session_id
+                )
             item = manager.inbox.add_approval(
                 session_id,
                 f"Run `{_request.tool_name}`?",
@@ -1414,6 +1438,20 @@ def create_app(manager: SessionManager) -> FastAPI:
 
         async def question_asker(args: dict, tool_call_id=None) -> dict:
             # ask_user (engine does NOT emit the event — we do, only when attended).
+            if confidential:
+                await ws.send_json(
+                    {
+                        "type": "question_requested",
+                        "data": {
+                            "question": str(args.get("question", "")),
+                            "options": list(args.get("options") or []),
+                            "allow_text": bool(args.get("allow_text", True)),
+                            "multi": bool(args.get("multi", False)),
+                            "header": str(args.get("header", "")),
+                        },
+                    }
+                )
+                return {"answer": await _await_ephemeral_reply()}
             item = manager.inbox.add_question(
                 session_id,
                 str(args.get("question", "")),
@@ -1445,25 +1483,28 @@ def create_app(manager: SessionManager) -> FastAPI:
 
         async def directory_requester(args: dict, tool_call_id=None) -> dict:
             # The engine has already emitted DIRECTORY_REQUESTED. Park, await, then apply the grant.
-            item = manager.inbox.add_directory(
-                session_id,
-                "Grant access to a folder?",
-                body=str(args.get("reason", "")),
-                inbox=_route(),
-                visibility=_visibility(),
-                data={
-                    "path": str(args.get("path", "")),
-                    "writable": bool(args.get("writable", False)),
-                },
-                tool_call_id=tool_call_id,
-            )
-            if item.state == "pending":
-                manager.persist_session(session_id)
-                if item.visibility == VIS_INBOX:
-                    await _mirror(item)
-            resp = _parse_json(
-                await manager.inbox.wait(item.id)
-            )  # {granted, path, writable}
+            if confidential:
+                resp = _parse_json(await _await_ephemeral_reply())
+            else:
+                item = manager.inbox.add_directory(
+                    session_id,
+                    "Grant access to a folder?",
+                    body=str(args.get("reason", "")),
+                    inbox=_route(),
+                    visibility=_visibility(),
+                    data={
+                        "path": str(args.get("path", "")),
+                        "writable": bool(args.get("writable", False)),
+                    },
+                    tool_call_id=tool_call_id,
+                )
+                if item.state == "pending":
+                    manager.persist_session(session_id)
+                    if item.visibility == VIS_INBOX:
+                        await _mirror(item)
+                resp = _parse_json(
+                    await manager.inbox.wait(item.id)
+                )  # {granted, path, writable}
             if not resp.get("granted"):
                 return {"granted": False, "reason": "the user declined the request"}
             path = (resp.get("path") or args.get("path") or "").strip()
@@ -1494,21 +1535,24 @@ def create_app(manager: SessionManager) -> FastAPI:
 
         async def plan_approver(_args: dict, tool_call_id=None) -> dict:
             # The engine has already emitted PLAN_PROPOSED. Park, await the verdict.
-            item = manager.inbox.add_plan(
-                session_id,
-                "Approve the plan?",
-                body=str(_args.get("plan", "")),
-                inbox=_route(),
-                visibility=_visibility(),
-                tool_call_id=tool_call_id,
-            )
-            if item.state == "pending":
-                manager.persist_session(session_id)
-                if item.visibility == VIS_INBOX:
-                    await _mirror(item)
-            resp = _parse_json(
-                await manager.inbox.wait(item.id)
-            )  # {approved, mode, feedback}
+            if confidential:
+                resp = _parse_json(await _await_ephemeral_reply())
+            else:
+                item = manager.inbox.add_plan(
+                    session_id,
+                    "Approve the plan?",
+                    body=str(_args.get("plan", "")),
+                    inbox=_route(),
+                    visibility=_visibility(),
+                    tool_call_id=tool_call_id,
+                )
+                if item.state == "pending":
+                    manager.persist_session(session_id)
+                    if item.visibility == VIS_INBOX:
+                        await _mirror(item)
+                resp = _parse_json(
+                    await manager.inbox.wait(item.id)
+                )  # {approved, mode, feedback}
             if not resp.get("approved"):
                 return {
                     "approved": False,
@@ -1523,6 +1567,8 @@ def create_app(manager: SessionManager) -> FastAPI:
             # and update their header. Never rebind mid-turn — the running loop reads
             # `engine.model` per iteration and a mixed turn is exactly the breakage the
             # old lock existed to prevent.
+            if confidential:
+                model = CONFIDENTIAL_MODEL
             if not model or manager.is_running(session_id):
                 return
             notice = engine.switch_model(model)
@@ -1537,6 +1583,10 @@ def create_app(manager: SessionManager) -> FastAPI:
         def _resolve_pending(resolution: str) -> None:
             # Live WS responses resolve THE session's single pending prompt (one at a time, since the
             # agent blocks). Reconnect / Inbox resolve by id via REST instead.
+            if confidential:
+                if ephemeral_reply is not None and not ephemeral_reply.done():
+                    ephemeral_reply.set_result(resolution)
+                return
             pend = manager.inbox.pending(session_id)
             if pend:
                 manager.inbox.resolve(pend[0].id, resolution)
@@ -1574,6 +1624,7 @@ def create_app(manager: SessionManager) -> FastAPI:
                     "agent": getattr(engine, "agent_name", "code"),
                     "model": engine.model,
                     "mode": engine.permissions.mode.value,
+                    "confidential": confidential,
                     "workspace": (
                         str(getattr(engine, "executor").cwd)
                         if getattr(engine, "executor", None)
@@ -1675,7 +1726,14 @@ def create_app(manager: SessionManager) -> FastAPI:
         except WebSocketDisconnect:
             pass
         finally:
+            if ephemeral_reply is not None and not ephemeral_reply.done():
+                ephemeral_reply.cancel()
             manager.unregister_session_client(session_id, ws.send_json)
+            if confidential:
+                # Browser teardown is not guaranteed to complete its REST cleanup. Treat the
+                # socket lifetime as the confidential session lifetime and erase server memory
+                # even when the tab or process disappears abruptly.
+                manager.delete_session(session_id)
 
     @app.websocket("/ws/events")
     async def ws_events(ws: WebSocket) -> None:

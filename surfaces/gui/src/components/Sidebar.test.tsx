@@ -45,6 +45,7 @@ const baseProps = {
   activeSession: "s-cowork-1",
   onSwitchAgent: vi.fn(),
   onNewSession: vi.fn(),
+  onNewConfidential: vi.fn(),
   onSelectSession: vi.fn(),
   onNewProject: vi.fn(),
   onRenameSession: vi.fn(),
@@ -199,6 +200,19 @@ describe("From Slack group (§31)", () => {
 });
 
 describe("New-session split button", () => {
+  it("starts a confidential session for the current persona", async () => {
+    stubFetch([
+      { match: "/v1/personas", method: "GET", json: PERSONAS },
+      { match: "/v1/settings", method: "GET", json: { nav_layout: "flat" } },
+    ]);
+    render(<Sidebar {...baseProps} />);
+    const confidential = await screen.findByTestId("new-confidential-session");
+
+    expect(confidential.textContent).toContain("History off");
+    fireEvent.click(confidential);
+    expect(baseProps.onNewConfidential).toHaveBeenCalledWith("cowork");
+  });
+
   it("collapses to a plain button when only one persona is enabled", async () => {
     stubFetch([
       {
