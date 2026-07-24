@@ -75,11 +75,18 @@ class Scheduler:
 
     async def _tick(self, *, trigger: str) -> None:
         for task in self.store.due():
-            # Spawn, don't await: a run can suspend on a parked approval (standing
-            # scoped approvals, §25) and one blocked automation must never stall the
-            # scheduler loop, other due tasks, or self-wake resumption. Overlap is
-            # still guarded inside run_task via _running_ids.
-            spawned = asyncio.create_task(self.run_task(task, trigger=trigger))
+            # Claim before spawning. If the overlap check lived only inside the new
+            # coroutine, several ticks could enqueue stale copies while a run was
+            # blocked; one could start just after the original released its claim.
+            if not self._claim(task.id):
+                continue
+            try:
+                spawned = asyncio.create_task(
+                    self._run_claimed_task(task, trigger=trigger)
+                )
+            except Exception:
+                self._running_ids.discard(task.id)
+                raise
             self._spawned.add(spawned)
             spawned.add_done_callback(self._spawned.discard)
         if self.extra_tick is not None:
@@ -88,26 +95,42 @@ class Scheduler:
             except Exception:
                 logger.exception("scheduler extra_tick (wake resume) failed")
 
-    async def run_task(self, task: ScheduledTask, *, trigger: str) -> Optional[TaskRun]:
-        if task.id in self._running_ids:  # skip-on-overlap
-            logger.info("skipping %s — previous run still going", task.id)
+    def _claim(self, task_id: str) -> bool:
+        if task_id in self._running_ids:
+            logger.info("skipping %s — previous run still going", task_id)
+            return False
+        self._running_ids.add(task_id)
+        return True
+
+    async def run_task(
+        self, task: ScheduledTask, *, trigger: str
+    ) -> Optional[TaskRun]:
+        if not self._claim(task.id):
             return None
-        self._running_ids.add(task.id)
+        return await self._run_claimed_task(task, trigger=trigger)
+
+    async def _run_claimed_task(
+        self, task: ScheduledTask, *, trigger: str
+    ) -> TaskRun:
         try:
-            run = await self.runner(task, trigger)
-        except Exception as exc:
-            logger.exception("task %s run failed", task.id)
-            run = TaskRun(
-                task_id=task.id, status="error", error=str(exc), trigger=trigger
-            )
-            self.store.add_run(run)
+            try:
+                run = await self.runner(task, trigger)
+            except Exception as exc:
+                logger.exception("task %s run failed", task.id)
+                run = TaskRun(
+                    task_id=task.id, status="error", error=str(exc), trigger=trigger
+                )
+                self.store.add_run(run)
+
+            # Advance next_run before releasing the overlap guard. Releasing first leaves a
+            # small window where the next scheduler tick still sees this task as due and can
+            # launch a duplicate immediately after a blocked approval resumes.
+            fresh = self.store.get(task.id)
+            if fresh is not None:
+                fresh.run_count += 1
+                fresh.last_run = run.started_at if run else None
+                fresh.last_status = run.status if run else "error"
+                self.store.save(fresh)
+            return run
         finally:
             self._running_ids.discard(task.id)
-        # advance the task (run_count/last_run) → save recomputes next_run.
-        fresh = self.store.get(task.id)
-        if fresh is not None:
-            fresh.run_count += 1
-            fresh.last_run = run.started_at if run else None
-            fresh.last_status = run.status if run else "error"
-            self.store.save(fresh)
-        return run

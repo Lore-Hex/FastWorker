@@ -150,6 +150,33 @@ async def test_scheduler_skips_overlapping_run(tmp_path):
     await first
 
 
+async def test_scheduler_claims_due_task_before_spawned_run_starts(tmp_path):
+    """Two ticks can run before a spawned coroutine gets CPU; only one may be queued."""
+    store = TaskStore(tmp_path / "auto.db")
+    task = _task(schedule=Schedule(kind="cron", cron="* * * * *"))
+    store.save(task)
+    store._conn.execute(
+        "UPDATE scheduled_tasks SET next_run=1.0 WHERE id=?", (task.id,)
+    )
+    store._conn.commit()
+    calls: list[str] = []
+
+    async def runner(due_task, trigger):
+        calls.append(due_task.id)
+        return TaskRun(task_id=due_task.id, status="ok", trigger=trigger)
+
+    sched = Scheduler(store, runner)
+    # _tick has no suspension without extra_tick, so the first spawned run cannot
+    # start before the second tick attempts to enqueue the same stale due row.
+    await sched._tick(trigger="catchup")
+    await sched._tick(trigger="schedule")
+    await asyncio.gather(*list(sched._spawned))
+
+    assert calls == [task.id]
+    assert store.get(task.id).run_count == 1
+    await sched.stop()
+
+
 # -- agent-facing tools --------------------------------------------------------
 def test_create_and_list_tools(tmp_path):
     store = TaskStore(tmp_path / "auto.db")
