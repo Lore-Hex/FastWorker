@@ -201,6 +201,11 @@ def client(tmp_path, monkeypatch):
 
 
 def test_managed_callback_lands_in_portal_profile(client):
+    # /oauth/callback requires a nonce from a connect the user started; mint the
+    # one the GUI path would have. See test_cloud_server.py.
+    from coworker.server import app as server_app
+
+    server_app._remember_pending_oauth("s", "hubspot")
     resp = client.post(
         "/oauth/callback",
         data={

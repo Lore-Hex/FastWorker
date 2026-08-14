@@ -8,6 +8,20 @@ flips the connector off without resurrecting any stored manual creds.
 
 from __future__ import annotations
 
+def _authorized_callback_form(connector: str, form: dict) -> dict:
+    """Attach a nonce and register it, as a real connect flow would.
+
+    /oauth/callback requires an app_state matching a connect the user actually
+    started (see test_cloud_server.py). These tests drive the callback
+    directly, so they mint the nonce the GUI path would have.
+    """
+    from coworker.server import app as server_app
+
+    state = f"test-{connector}-{len(server_app._PENDING_OAUTH)}"
+    server_app._remember_pending_oauth(state, connector)
+    return {**form, "app_state": state}
+
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -55,7 +69,8 @@ def test_managed_callback_installs_and_hot_reloads(client, monkeypatch):
         return []
 
     monkeypatch.setattr(client.manager, "refresh_gateway", _refresh)
-    resp = client.post("/oauth/callback", data=_install_form("T1"))
+    resp = client.post("/oauth/callback",
+        data=_authorized_callback_form("slack", _install_form("T1")))
     assert resp.status_code == 200 and "Slack connected" in resp.text
     assert client.manager.secrets.get("slack:team:T1")["bot_token"] == "xoxb-T1"
     # The broker-resolved workspace domain persists (names collide; domains don't)
@@ -71,7 +86,8 @@ def test_managed_callback_installs_and_hot_reloads(client, monkeypatch):
     assert refreshes  # new workspace's token loads without an app restart
 
     # a second workspace instals alongside, not instead
-    client.post("/oauth/callback", data=_install_form("T2"))
+    client.post("/oauth/callback",
+        data=_authorized_callback_form("slack", _install_form("T2")))
     assert client.manager.secrets.get("slack:team:T1") is not None
     assert client.manager.secrets.get("slack:team:T2") is not None
 
@@ -79,7 +95,8 @@ def test_managed_callback_installs_and_hot_reloads(client, monkeypatch):
 def test_disconnect_one_workspace_keeps_the_other(client, monkeypatch):
     cloud_calls = _no_cloud(monkeypatch)
     for t in ("T1", "T2"):
-        client.post("/oauth/callback", data=_install_form(t))
+        client.post("/oauth/callback",
+        data=_authorized_callback_form("slack", _install_form(t)))
 
     body = client.post("/v1/connectors/slack/workspaces/T1/disconnect").json()
     assert body["ok"] is True and body["remaining_workspaces"] == 1
@@ -94,7 +111,8 @@ def test_disconnect_one_workspace_keeps_the_other(client, monkeypatch):
 
 def test_disconnect_last_workspace_flips_connector_off(client, monkeypatch):
     _no_cloud(monkeypatch)
-    client.post("/oauth/callback", data=_install_form("T1"))
+    client.post("/oauth/callback",
+        data=_authorized_callback_form("slack", _install_form("T1")))
 
     body = client.post("/v1/connectors/slack/workspaces/T1/disconnect").json()
     assert body["ok"] is True and body["remaining_workspaces"] == 0
@@ -111,7 +129,8 @@ def test_last_disconnect_never_resurrects_manual_creds(client, monkeypatch):
         "slack:default",
         {"type": "token", "bot_token": "xoxb-manual", "app_token": "xapp-manual"},
     )
-    client.post("/oauth/callback", data=_install_form("T1"))
+    client.post("/oauth/callback",
+        data=_authorized_callback_form("slack", _install_form("T1")))
     client.post("/v1/connectors/slack/workspaces/T1/disconnect")
 
     default = client.manager.secrets.get("slack:default")

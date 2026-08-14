@@ -7,6 +7,19 @@ import pytest
 from fastapi.testclient import TestClient
 
 from coworker.server import SessionManager, create_app
+from coworker.server import app as server_app
+
+
+def _start_managed_connect(connector: str, app_state: str = "s") -> str:
+    """Register the nonce a real connect flow would have minted.
+
+    /oauth/callback now requires it. The GUI gets there via
+    POST /v1/connectors/{name}/connect-managed, which mints the nonce in
+    cloud.py and records it; these tests short-circuit that so they can keep
+    exercising the callback itself.
+    """
+    server_app._remember_pending_oauth(app_state, connector)
+    return app_state
 
 
 @pytest.fixture
@@ -38,6 +51,7 @@ def test_connect_managed_requires_sign_in(client):
 
 
 def test_oauth_callback_writes_profile_and_returns_page(client):
+    _start_managed_connect("gmail")
     resp = client.post(
         "/oauth/callback",
         data={
@@ -72,9 +86,10 @@ def test_oauth_callback_writes_profile_and_returns_page(client):
 
 
 def test_oauth_callback_error_shows_failure_page(client):
+    _start_managed_connect("gmail")
     resp = client.post(
         "/oauth/callback",
-        data={"connector": "gmail", "error": "access_denied"},
+        data={"connector": "gmail", "error": "access_denied", "app_state": "s"},
     )
     assert resp.status_code == 400
     assert "access_denied" in resp.text
@@ -83,9 +98,10 @@ def test_oauth_callback_error_shows_failure_page(client):
 
 def test_oauth_callback_rejects_unmanaged_connector(client):
     # telegram is manual-only (github gained a managed path with the App relay)
+    _start_managed_connect("telegram")
     resp = client.post(
         "/oauth/callback",
-        data={"connector": "telegram", "access_token": "x"},
+        data={"connector": "telegram", "access_token": "x", "app_state": "s"},
     )
     assert resp.status_code == 400
     assert client.manager.secrets.get("telegram:default") is None
@@ -193,3 +209,92 @@ def test_delete_persona_refuses_builtin_and_unknown(client):
     assert not body["ok"] and "built-in" in body["error"]
     body = client.delete("/v1/personas/ghost").json()
     assert not body["ok"] and "unknown" in body["error"]
+
+
+def test_oauth_callback_rejects_a_callback_nobody_started(client):
+    """The hole this guard closes.
+
+    /oauth/callback is an unauthenticated loopback POST and the sidecar
+    auto-starts with the GUI, so anything that can reach 127.0.0.1 on its port
+    — another local process, or a web page doing a cross-site form POST — could
+    hand the app attacker-chosen connector credentials, which it would store
+    and then use for outbound calls.
+
+    Nothing is registered here, so the POST is exactly that unsolicited call.
+    """
+    resp = client.post(
+        "/oauth/callback",
+        data={
+            "provider": "google",
+            "connector": "gmail",
+            "connection_id": "attacker",
+            "access_token": "ya29.attacker-token",
+            "account": "attacker@evil.example",
+            "app_state": "guessed",
+        },
+    )
+
+    assert resp.status_code == 400
+    assert client.manager.secrets.get("gmail:account:attacker@evil.example") is None
+    assert client.manager.secrets.get("gmail:default") is None
+
+
+def test_oauth_callback_rejects_a_missing_nonce(client):
+    _start_managed_connect("gmail")
+    resp = client.post(
+        "/oauth/callback",
+        data={"connector": "gmail", "access_token": "t", "account": "a@b.c"},
+    )
+    assert resp.status_code == 400
+    assert client.manager.secrets.get("gmail:account:a@b.c") is None
+
+
+def test_oauth_callback_nonce_is_single_use(client):
+    """A replayed callback fails even with the right value, so a nonce that
+    leaks (browser history, a shared log) is not a standing key."""
+    _start_managed_connect("gmail")
+    first = client.post(
+        "/oauth/callback",
+        data={"connector": "gmail", "access_token": "t1", "account": "a@b.c"} | {"app_state": "s"},
+    )
+    assert first.status_code == 200
+
+    second = client.post(
+        "/oauth/callback",
+        data={"connector": "gmail", "access_token": "t2", "account": "z@z.z"} | {"app_state": "s"},
+    )
+    assert second.status_code == 400
+    assert client.manager.secrets.get("gmail:account:z@z.z") is None
+
+
+def test_a_nonce_issued_for_one_connector_cannot_finish_another(client):
+    """Otherwise starting a low-value connect would mint a nonce usable to
+    inject credentials for a high-value one."""
+    _start_managed_connect("gmail", app_state="tok")
+    resp = client.post(
+        "/oauth/callback",
+        data={
+            "connector": "slack",
+            "access_token": "xoxb-attacker",
+            "account": "a@b.c",
+            "app_state": "tok",
+        },
+    )
+    assert resp.status_code == 400
+    assert client.manager.secrets.get("slack:default") is None
+
+
+def test_expired_nonces_are_dropped(client, monkeypatch):
+    """A connect the user abandoned must not stay usable forever."""
+    import time as _real_time
+
+    _start_managed_connect("gmail", app_state="old")
+    # Capture the real clock BEFORE patching: patching time.time and then
+    # calling it inside the replacement recurses.
+    later = _real_time.time() + server_app._PENDING_OAUTH_TTL_SECONDS + 1
+    monkeypatch.setattr(server_app.time, "time", lambda: later)
+    resp = client.post(
+        "/oauth/callback",
+        data={"connector": "gmail", "access_token": "t", "account": "a@b.c", "app_state": "old"},
+    )
+    assert resp.status_code == 400

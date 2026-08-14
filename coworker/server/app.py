@@ -8,9 +8,11 @@ proxy so any OpenAI-format client can use the runtime as a backend.
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import os
 import re
+import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -125,6 +127,56 @@ _CONNECT_FAILED_DETAIL = (
     "Something went wrong finishing this connection. "
     "Close this tab and try again from FastWorker."
 )
+
+# Pending managed-OAuth nonces, keyed by the `app_state` minted in cloud.py.
+#
+# /oauth/callback is an unauthenticated loopback POST — the broker cannot
+# present a credential to a process on the user's machine — so this nonce is
+# the only thing distinguishing a real callback from any other local process,
+# or a web page doing a cross-site form POST at 127.0.0.1. Entries are consumed
+# exactly once and expire, so a leaked nonce is not a standing key.
+_PENDING_OAUTH: dict[str, tuple[str, float]] = {}
+_PENDING_OAUTH_TTL_SECONDS = 15 * 60
+_PENDING_OAUTH_MAX = 32
+
+
+def _prune_pending_oauth(now: float) -> None:
+    for state, (_connector, started) in list(_PENDING_OAUTH.items()):
+        if now - started > _PENDING_OAUTH_TTL_SECONDS:
+            _PENDING_OAUTH.pop(state, None)
+    # A caller that starts flows without finishing them must not grow this
+    # without bound; drop the oldest rather than refusing new connects.
+    while len(_PENDING_OAUTH) > _PENDING_OAUTH_MAX:
+        oldest = min(_PENDING_OAUTH, key=lambda k: _PENDING_OAUTH[k][1])
+        _PENDING_OAUTH.pop(oldest, None)
+
+
+def _remember_pending_oauth(app_state: str, connector: str) -> None:
+    if not app_state:
+        return
+    now = time.time()
+    _prune_pending_oauth(now)
+    _PENDING_OAUTH[app_state] = (connector, now)
+
+
+def _consume_pending_oauth(app_state: str, connector: str) -> bool:
+    """True when this callback matches a connect the user actually started.
+
+    Consumes the nonce, so a replayed callback fails even with the right value.
+    Compared with compare_digest: the nonce is a short-lived bearer value and
+    the comparison should not leak its prefix through timing.
+    """
+    now = time.time()
+    _prune_pending_oauth(now)
+    if not app_state:
+        return False
+    for candidate, (expected_connector, _started) in list(_PENDING_OAUTH.items()):
+        if hmac.compare_digest(candidate, app_state):
+            _PENDING_OAUTH.pop(candidate, None)
+            # A nonce issued for one connector must not finish another.
+            return not connector or not expected_connector or connector == expected_connector
+    return False
+
 
 from ..attachments import build_user_content
 from ..engine import ApprovalOutcome
@@ -987,8 +1039,14 @@ def create_app(manager: SessionManager) -> FastAPI:
             )
         )
         if out.get("ok"):
+            # Remember the nonce this flow was started with. /oauth/callback is
+            # an unauthenticated loopback endpoint, so the nonce is the only
+            # thing tying a callback to a connect the user actually initiated.
+            _remember_pending_oauth(out.get("app_state", ""), name)
             webbrowser.open(out["authorize_url"])
-        return out
+        # Never hand the nonce to the caller: it is a bearer value for the
+        # callback, and the GUI has no use for it.
+        return {k: v for k, v in out.items() if k != "app_state"}
 
     @app.post("/oauth/callback")
     async def managed_oauth_callback(request: Request) -> Any:
@@ -1003,6 +1061,23 @@ def create_app(manager: SessionManager) -> FastAPI:
         form = await request.form()
         data = {k: str(v) for k, v in form.items()}
         connector = data.get("connector", "")
+        # This endpoint is a loopback POST with no request auth: anything that
+        # can reach 127.0.0.1 on the sidecar's port can call it, and the
+        # sidecar auto-starts with the GUI. Without this check any local process
+        # — or a browser page doing a cross-site form POST — could hand us
+        # attacker-chosen connector credentials, which we would then store and
+        # use for outbound calls. The nonce is minted in cloud.py, round-tripped
+        # through the broker, and consumed exactly once here.
+        if not _consume_pending_oauth(data.get("app_state", ""), connector):
+            return HTMLResponse(
+                _browser_page(
+                    "Connection failed",
+                    _CONNECT_FAILED_DETAIL,
+                    ok=False,
+                    error="unrecognized or expired connect request",
+                ),
+                status_code=400,
+            )
         if data.get("error"):
             return HTMLResponse(
                 _browser_page(
