@@ -8,6 +8,20 @@ PAT untouched for manual). Hermetic: fake transports, stubbed broker calls.
 
 from __future__ import annotations
 
+def _authorized_callback_form(connector: str, form: dict) -> dict:
+    """Attach a nonce and register it, as a real connect flow would.
+
+    /oauth/callback requires an app_state matching a connect the user actually
+    started (see test_cloud_server.py). These tests drive the callback
+    directly, so they mint the nonce the GUI path would have.
+    """
+    from coworker.server import app as server_app
+
+    state = f"test-{connector}-{len(server_app._PENDING_OAUTH)}"
+    server_app._remember_pending_oauth(state, connector)
+    return {**form, "app_state": state}
+
+
 import asyncio
 import json
 
@@ -75,7 +89,8 @@ def test_managed_callback_installs_and_hot_reloads(client, monkeypatch):
         return []
 
     monkeypatch.setattr(client.manager, "refresh_gateway", _refresh)
-    resp = client.post("/oauth/callback", data=_install_form("101"))
+    resp = client.post("/oauth/callback",
+        data=_authorized_callback_form("github", _install_form("101")))
     assert resp.status_code == 200 and "GitHub connected" in resp.text
 
     profile = client.manager.secrets.get("github:install:101")
@@ -98,7 +113,8 @@ def test_managed_callback_installs_and_hot_reloads(client, monkeypatch):
     assert gh["installations"][0]["account_login"] == "acme"
 
     # a second installation lands alongside, not instead
-    client.post("/oauth/callback", data=_install_form("202", account="hooli"))
+    client.post("/oauth/callback",
+        data=_authorized_callback_form("github", _install_form("202", account="hooli")))
     assert client.manager.secrets.get("github:install:101") is not None
     assert client.manager.secrets.get("github:install:202") is not None
 
@@ -106,7 +122,8 @@ def test_managed_callback_installs_and_hot_reloads(client, monkeypatch):
 def test_disconnect_one_installation_keeps_the_other(client, monkeypatch):
     cloud_calls = _no_cloud(monkeypatch)
     for iid in ("101", "202"):
-        client.post("/oauth/callback", data=_install_form(iid))
+        client.post("/oauth/callback",
+        data=_authorized_callback_form("github", _install_form(iid)))
 
     body = client.post("/v1/connectors/github/installations/101/disconnect").json()
     assert body["ok"] is True and body["remaining_installs"] == 1
@@ -125,7 +142,8 @@ def test_disconnect_last_installation_never_resurrects_manual_pat(client, monkey
     client.manager.secrets.put(
         "github:default", {"type": "token", "token": "ghp_manual", "enabled": True}
     )
-    client.post("/oauth/callback", data=_install_form("101"))
+    client.post("/oauth/callback",
+        data=_authorized_callback_form("github", _install_form("101")))
     body = client.post("/v1/connectors/github/installations/101/disconnect").json()
     assert body["ok"] is True and body["remaining_installs"] == 0
 
