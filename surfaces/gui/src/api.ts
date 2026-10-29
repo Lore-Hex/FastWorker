@@ -2517,8 +2517,12 @@ export interface ProviderInfo {
   // How Models & Keys groups it: a server on the user's own hardware, a plan signed
   // into, or an API key. Absent on an older backend → treated as an API key.
   kind?: "local" | "subscription" | "api_key";
+  is_custom?: boolean; // user-created OpenAI-compatible provider
   // Local servers only: whether the server answers right now (cached probe).
   alive?: boolean;
+  // llama.cpp on a Mac (UX-057): OpenWorker can set it up and run it, and what it runs.
+  setup_here?: boolean;
+  managed?: { phase: LlamaCppPhase; model: string | null };
   signed_in?: boolean;
   account?: string | null; // signed-in account label (email or id)
   authorizing?: boolean;
@@ -2716,6 +2720,77 @@ export async function getLocalModels(
   return res.json();
 }
 
+// -- llama.cpp set up and run by OpenWorker (UX-057) ---------------------------------
+export type LlamaCppPhase = "idle" | "installing" | "downloading" | "loading" | "checking" | "running" | "failed";
+export type ModelFit = "runs_well" | "tight" | "too_large" | "unknown";
+export type LlamaCppChoice =
+  | { kind: "suggested"; id: string }
+  | { kind: "ollama"; name: string }
+  | { kind: "file"; path: string };
+
+export interface LlamaCppSetup {
+  supported: boolean;
+  brew: string | null;
+  installed: { path: string; version: string | null } | null;
+  install_command: string;
+  cache_dir: string;
+  cache_free_bytes: number | null;
+  suggested: {
+    id: string;
+    name: string;
+    vendor: string | null;
+    quant: string | null;
+    features: string[];
+    size: number | null;
+    fit: ModelFit;
+    downloaded: boolean;
+    // The model's licence, named and linked before Download (from its Hugging Face card).
+    license: string | null;
+    license_url: string | null;
+  }[];
+  ollama: { name: string; path: string; size: number; fit: ModelFit }[];
+  ollama_pull: { name: string; size: number | null; fit: ModelFit; command: string }[];
+  phase: LlamaCppPhase;
+  lines: string[];
+  // `verifying`: the file is down and its sha256 is being checked against Hugging Face's.
+  progress: { done: number; total: number; seconds_left: number | null; verifying?: boolean } | null;
+  model: { name: string; detail: string | null; alias: string; download?: boolean; context?: number; file?: string } | null;
+  error: string | null;
+  check: { answers: boolean; tools: boolean } | null;
+  // "unverified": the Hugging Face API was unreachable, so the download's checksum was not checked.
+  note: "unverified" | null;
+  // Seconds until the next try while Hugging Face rate-limits the download.
+  retry_in: number | null;
+  address: string | null;
+  autostart: boolean;
+  last_choice: LlamaCppChoice | null;
+}
+
+async function llamacppPost(path: string, body?: unknown): Promise<LlamaCppSetup & { ok?: boolean; error?: string }> {
+  const res = await fetch(`${httpBase()}/v1/llamacpp/${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body ?? {}),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+export async function getLlamaCppSetup(): Promise<LlamaCppSetup> {
+  const res = await fetch(`${httpBase()}/v1/llamacpp/setup`, { signal: AbortSignal.timeout(15_000) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+export const installLlamaCpp = () => llamacppPost("install");
+export const startLlamaCpp = (choice: LlamaCppChoice) => llamacppPost("start", { choice });
+export const stopLlamaCpp = () => llamacppPost("stop");
+export const cancelLlamaCpp = () => llamacppPost("cancel");
+export const setLlamaCppAutostart = (on: boolean) => llamacppPost("autostart", { on });
+export async function pickGgufFile(): Promise<{ ok: boolean; path?: string; canceled?: boolean; error?: string }> {
+  const res = await fetch(`${httpBase()}/v1/llamacpp/pick-file`, { method: "POST" });
+  return res.json();
+}
+
 export async function getProviders(): Promise<ProviderInfo[]> {
   const res = await fetch(`${httpBase()}/v1/providers`);
   const data = await res.json();
@@ -2737,6 +2812,20 @@ export async function setProvider(
   return res.json();
 }
 
+/** Create a named, user-configured OpenAI-compatible provider. */
+export async function createCustomProvider(
+  name: string,
+  title: string,
+  fields: Record<string, string>,
+): Promise<{ ok: boolean; error?: string; provider?: string }> {
+  const res = await fetch(`${httpBase()}/v1/providers/custom`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, title, fields }),
+  });
+  return res.json();
+}
+
 /** Forget a provider's stored config (Settings ▸ Models "Remove key…"). */
 export async function removeProvider(name: string): Promise<{ ok: boolean; error?: string }> {
   const res = await fetch(`${httpBase()}/v1/providers/${encodeURIComponent(name)}`, {
@@ -2749,7 +2838,7 @@ export async function removeProvider(name: string): Promise<{ ok: boolean; error
 export async function verifyProvider(
   name: string,
   fields: Record<string, string>,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; warning?: string }> {
   const res = await fetch(`${httpBase()}/v1/providers/verify`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
