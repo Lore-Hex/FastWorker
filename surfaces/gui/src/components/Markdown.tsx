@@ -1,5 +1,7 @@
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
+import { useTranslation } from "react-i18next";
 import remarkGfm from "remark-gfm";
+import { TaskChip } from "./TaskChip";
 import { Icon } from "./Icon";
 
 // §34 (UX-016): the agent ends a deliverable turn with plain markdown —
@@ -29,14 +31,23 @@ function BoardChip({ label }: { label: string }) {
 }
 
 function ArtifactChip({ path, title }: { path: string; title: string }) {
-  const file = path.split("/").pop() || path;
+  const { t } = useTranslation();
+  let decodedPath = path;
+  try {
+    decodedPath = decodeURIComponent(path);
+  } catch {
+    // Literal percent signs are valid in filenames even when they are not URL encoding.
+  }
+  const file = decodedPath.split(/[\\/]/).pop() || decodedPath;
   return (
     <button
       className="art-chip"
       data-testid="artifact-chip"
-      title={path}
+      title={decodedPath}
       onClick={() =>
-        window.dispatchEvent(new CustomEvent(OPEN_ARTIFACT_EVENT, { detail: { path } }))
+        window.dispatchEvent(
+          new CustomEvent(OPEN_ARTIFACT_EVENT, { detail: { path: decodedPath } }),
+        )
       }
     >
       <span className="art-chip-ico">
@@ -46,7 +57,7 @@ function ArtifactChip({ path, title }: { path: string; title: string }) {
         <b>{title || file}</b>
         {title && title !== file && <span>{file}</span>}
       </span>
-      <span className="art-chip-open">Open ›</span>
+      <span className="art-chip-open">{t("rail.open")} ›</span>
     </button>
   );
 }
@@ -62,10 +73,11 @@ export function Markdown({ text }: { text: string }) {
         // artifact:/board: are ours — keep them through the sanitizer (everything else gets
         // the default http/https/mailto policy).
         urlTransform={(url) =>
-          url.startsWith("artifact:") || url.startsWith("board:") ? url : defaultUrlTransform(url)
+          url.startsWith("task:") || url.startsWith("artifact:") || url.startsWith("board:") ? url : defaultUrlTransform(url)
         }
         components={{
           a: ({ node: _n, href, children, ...props }) => {
+            if (href?.startsWith("task:")) return <TaskChip id={href.slice(5)}>{children}</TaskChip>;
             if (href?.startsWith("artifact:")) {
               const title = Array.isArray(children) ? children.join("") : String(children ?? "");
               return <ArtifactChip path={href.slice("artifact:".length)} title={title} />;
